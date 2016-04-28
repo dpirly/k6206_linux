@@ -85,7 +85,7 @@
 		};
 	};
 
-	sound {
+	sound: sound {
 		compatible = "fsl,imx6ul-evk-wm8960",
 			   "fsl,imx-audio-wm8960";
 		model = "wm8960-audio";
@@ -406,6 +406,12 @@
 				MX6UL_PAD_LCD_VSYNC__LCDIF_VSYNC    0x79
 				/* used for lcd reset */
 				MX6UL_PAD_SNVS_TAMPER9__GPIO5_IO09  0x79
+			>;
+		};
+
+		pinctrl_pf1550: pf1550 {
+			fsl,pins = <
+				 MX6UL_PAD_SNVS_TAMPER4__GPIO5_IO04      0x80000000
 			>;
 		};
 
