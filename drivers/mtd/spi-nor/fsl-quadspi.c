@@ -42,6 +42,8 @@
 #define QUADSPI_QUIRK_TKT253890		(1 << 2)
 /* Controller cannot wake up from wait mode, TKT245618 */
 #define QUADSPI_QUIRK_TKT245618         (1 << 3)
+/* Need low level code to control the clock */
+#define QUADSPI_QUIRK_LL_CLK		(1 << 4)
 
 /* The registers */
 #define QUADSPI_MCR			0x00
@@ -221,7 +223,7 @@
 #define SEQID_DYNAMIC_CMD0	14
 #define SEQID_DYNAMIC_CMD1	15
 
-#define QUADSPI_MIN_IOMAP SZ_4M
+#define QUADSPI_MIN_IOMAP    SZ_4M
 
 /* dynamic lut configs */
 #define MAX_LUT_REGS 4
@@ -255,6 +257,7 @@ enum fsl_qspi_devtype {
 	FSL_QUADSPI_IMX6SX,
 	FSL_QUADSPI_IMX7D,
 	FSL_QUADSPI_IMX6UL,
+	FSL_QUADSPI_IMX7ULP,
 };
 
 struct fsl_qspi_devtype_data {
@@ -299,6 +302,15 @@ static struct fsl_qspi_devtype_data imx6ul_data = {
 	.ahb_buf_size = 1024,
 	.driver_data = QUADSPI_QUIRK_TKT253890
 		       | QUADSPI_QUIRK_4X_INT_CLK,
+};
+
+static struct fsl_qspi_devtype_data imx7ulp_data = {
+	.devtype = FSL_QUADSPI_IMX7ULP,
+	.rxfifo = 64,
+	.txfifo = 64,
+	.ahb_buf_size = 128,
+	.driver_data = QUADSPI_QUIRK_LL_CLK
+		      | QUADSPI_QUIRK_TKT253890
 };
 
 #define FSL_QSPI_MAX_CHIP	4
@@ -347,6 +359,11 @@ static inline int needs_fill_txfifo(struct fsl_qspi *q)
 static inline int needs_wakeup_wait_mode(struct fsl_qspi *q)
 {
 	return q->devtype_data->driver_data & QUADSPI_QUIRK_TKT245618;
+}
+
+static inline int needs_ll_handle_clock(struct fsl_qspi *q)
+{
+	return q->devtype_data->driver_data & QUADSPI_QUIRK_LL_CLK;
 }
 
 /*
@@ -417,6 +434,11 @@ static void fsl_qspi_init_lut(struct fsl_qspi *q)
 		} else {
 			dev_err(nor->dev, "Unsupported opcode : 0x%.2x\n", op);
 		}
+	} else if (nor->flash_read == SPI_NOR_NORMAL) {
+		writel(LUT0(CMD, PAD1, op) | LUT1(ADDR, PAD1, addrlen),
+			base + QUADSPI_LUT(lut_base));
+		writel(LUT0(READ, PAD1, rxfifo) | LUT1(JMP_ON_CS, PAD1, 0),
+			base + QUADSPI_LUT(lut_base + 1));
 	} else if (nor->flash_read == SPI_NOR_DDR_QUAD) {
 		if (op == SPINOR_OP_READ_1_4_4_D ||
 			 op == SPINOR_OP_READ4_1_4_4_D) {
@@ -579,6 +601,7 @@ static int fsl_qspi_get_seqid(struct fsl_qspi *q, u8 cmd)
 	case SPINOR_OP_READ4_1_4_4_D:
 	case SPINOR_OP_READ4_1_1_4:
 	case SPINOR_OP_READ_1_1_4:
+	case SPINOR_OP_READ:
 		return SEQID_QUAD_READ;
 	case SPINOR_OP_WREN:
 		return SEQID_WREN;
@@ -879,7 +902,7 @@ static int fsl_qspi_nor_setup(struct fsl_qspi *q)
 
 	/* the default frequency, we will change it in the future. */
 	ret = clk_set_rate(q->clk, 66000000);
-	if (ret)
+	if (ret && !needs_ll_handle_clock(q))
 		return ret;
 
 	ret = fsl_qspi_clk_prep_enable(q);
@@ -937,7 +960,7 @@ static int fsl_qspi_nor_setup_last(struct fsl_qspi *q)
 	fsl_qspi_clk_disable_unprep(q);
 
 	ret = clk_set_rate(q->clk, rate);
-	if (ret)
+	if (ret && !needs_ll_handle_clock(q))
 		return ret;
 
 	ret = fsl_qspi_clk_prep_enable(q);
@@ -960,6 +983,7 @@ static const struct of_device_id fsl_qspi_dt_ids[] = {
 	{ .compatible = "fsl,imx7d-qspi", .data = (void *)&imx7d_data, },
 	{ .compatible = "fsl,imx6ul-qspi", .data = (void *)&imx6ul_data, },
 	{ .compatible = "fsl,imx6ull-qspi", .data = (void *)&imx6ul_data, },
+	{ .compatible = "fsl,imx7ulp-qspi", .data = (void *)&imx7ulp_data, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, fsl_qspi_dt_ids);
