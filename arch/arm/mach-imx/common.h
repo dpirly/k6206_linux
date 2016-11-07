@@ -203,13 +203,17 @@ bool imx_gpc_usb_wakeup_enabled(void);
 #ifdef CONFIG_SUSPEND
 void v7_cpu_resume(void);
 void ca7_cpu_resume(void);
+void imx7ulp_cpu_resume(void);
 void imx6_suspend(void __iomem *ocram_vbase);
 void imx7_suspend(void __iomem *ocram_vbase);
+void imx7ulp_suspend(void __iomem *ocram_vbase);
 #else
 static inline void v7_cpu_resume(void) {}
 static inline void ca7_cpu_resume(void) {}
+static inline void imx7ulp_cpu_resume(void) {}
 static inline void imx6_suspend(void __iomem *ocram_vbase) {}
 static inline void imx7_suspend(void __iomem *ocram_vbase) {}
+static inline void imx7ulp_suspend(void __iomem *ocram_vbase) {}
 #endif
 
 void imx7_pm_init(void);
@@ -221,6 +225,7 @@ void imx6sx_pm_init(void);
 void imx6ul_pm_init(void);
 void imx6ull_pm_init(void);
 void imx7ulp_pm_init(void);
+void imx7ulp_enable_nmi(void);
 void imx6q_pm_set_ccm_base(void __iomem *base);
 
 #ifdef CONFIG_PM
