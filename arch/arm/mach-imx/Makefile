@@ -127,8 +127,10 @@ obj-$(CONFIG_SOC_IMX7ULP) += clk-imx7ulp.o mach-imx7ulp.o pm-imx7ulp.o
 ifeq ($(CONFIG_SUSPEND),y)
 AFLAGS_suspend-imx6.o :=-Wa,-march=armv7-a
 AFLAGS_suspend-imx7.o :=-Wa,-march=armv7-a
+AFLAGS_suspend-imx7ulp.o :=-Wa,-march=armv7-a
 obj-$(CONFIG_SOC_IMX6) += suspend-imx6.o
 obj-$(CONFIG_SOC_IMX7) += suspend-imx7.o
+obj-$(CONFIG_SOC_IMX7ULP) += suspend-imx7ulp.o
 endif
 obj-$(CONFIG_SOC_IMX6) += pm-imx6.o
 AFLAGS_smp_wfe.o :=-Wa,-march=armv7-a
