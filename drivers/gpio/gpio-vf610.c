@@ -44,6 +44,7 @@ struct vf610_gpio_port {
 #define GPIO_PCOR		0x08
 #define GPIO_PTOR		0x0c
 #define GPIO_PDIR		0x10
+#define GPIO_PDDR		0x14
 
 #define PORT_PCR(n)		((n) * 0x4)
 #define PORT_PCR_IRQC_OFFSET	16
@@ -89,8 +90,16 @@ static int vf610_gpio_get(struct gpio_chip *gc, unsigned int gpio)
 {
 	struct vf610_gpio_port *port =
 		container_of(gc, struct vf610_gpio_port, gc);
+	unsigned long mask = BIT(gpio);
 
-	return !!(vf610_gpio_readl(port->gpio_base + GPIO_PDIR) & BIT(gpio));
+	mask &= vf610_gpio_readl(port->gpio_base + GPIO_PDDR);
+
+	if (mask)
+		return !!(vf610_gpio_readl(port->gpio_base + GPIO_PDOR)
+				& BIT(gpio));
+	else
+		return !!(vf610_gpio_readl(port->gpio_base + GPIO_PDIR)
+				& BIT(gpio));
 }
 
 static void vf610_gpio_set(struct gpio_chip *gc, unsigned int gpio, int val)
@@ -98,6 +107,8 @@ static void vf610_gpio_set(struct gpio_chip *gc, unsigned int gpio, int val)
 	struct vf610_gpio_port *port =
 		container_of(gc, struct vf610_gpio_port, gc);
 	unsigned long mask = BIT(gpio);
+
+	vf610_gpio_writel(mask, port->gpio_base + GPIO_PDDR);
 
 	if (val)
 		vf610_gpio_writel(mask, port->gpio_base + GPIO_PSOR);
@@ -107,6 +118,14 @@ static void vf610_gpio_set(struct gpio_chip *gc, unsigned int gpio, int val)
 
 static int vf610_gpio_direction_input(struct gpio_chip *chip, unsigned gpio)
 {
+	struct vf610_gpio_port *port =
+		container_of(chip, struct vf610_gpio_port, gc);
+	unsigned long mask = BIT(gpio);
+	u32 val;
+
+	val = vf610_gpio_readl(port->gpio_base + GPIO_PDDR);
+	val &= ~mask;
+	vf610_gpio_writel(val, port->gpio_base + GPIO_PDDR);
 	return pinctrl_gpio_direction_input(chip->base + gpio);
 }
 
