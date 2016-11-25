@@ -6,7 +6,9 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/irq.h>
 #include <linux/irqchip.h>
+#include <linux/irqchip/arm-gic.h>
 #include <linux/of_platform.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -31,6 +33,7 @@ static void __init imx7ulp_init_irq(void)
 	/* TBD */
 	mxc_set_cpu_type(MXC_CPU_IMX7ULP);
 
+	gic_set_irqchip_flags(IRQCHIP_SKIP_SET_WAKE);
 	irqchip_init();
 	imx7ulp_pm_init();
 }
