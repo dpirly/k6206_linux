@@ -21,6 +21,7 @@ obj-$(CONFIG_COMMON_CLK) += clk-pllv1.o clk-pllv2.o clk-pllv3.o clk-gate2.o \
 			    clk-composite.o \
 			    clk-frac-divider.o \
 			    clk-pllv4.o	\
+			    clk-pllv5.o	\
 			    clk-pfdv2.o
 
 obj-$(CONFIG_IMX_HAVE_IOMUX_V1) += iomux-v1.o
