@@ -174,12 +174,12 @@ struct fsl_edma_engine {
 	int			txirq;
 	int			errirq;
 	bool			big_endian;
-	struct fsl_edma_chan	chans[];
 	u32			dmamux_nr;
 	u32			version;
 	void			(*mux_configure)(struct fsl_edma_chan *,
 						 void __iomem *muxaddr, u32 off,
 						 u32 slot, bool enable);
+	struct fsl_edma_chan	chans[];
 };
 
 void mux_configure8(struct fsl_edma_chan *fsl_chan, void __iomem *muxaddr,
@@ -741,7 +741,7 @@ static irqreturn_t fsl_edma_err_handler(int irq, void *dev_id)
 
 	for (ch = 0; ch < fsl_edma->n_chans; ch++) {
 		if (err & (0x1 << ch)) {
-			dev_err(fsl_edma->dma_dev->dev, "DMA CH%d Err!\n", ch);
+			dev_err(fsl_edma->dma_dev.dev, "DMA CH%d Err!\n", ch);
 			fsl_edma_disable_request(&fsl_edma->chans[ch]);
 			edma_writeb(fsl_edma, EDMA_CERR_CERR(ch),
 				fsl_edma->membase + EDMA_CERR);
