@@ -2065,6 +2065,7 @@ static int lpuart_remove(struct platform_device *pdev)
 static int lpuart_suspend(struct device *dev)
 {
 	struct lpuart_port *sport = dev_get_drvdata(dev);
+	struct tty_port *port = &sport->port.state->port;
 	unsigned long temp;
 
 	clk_prepare_enable(sport->clk);
@@ -2079,9 +2080,31 @@ static int lpuart_suspend(struct device *dev)
 		temp &= ~(UARTCR2_TE | UARTCR2_TIE | UARTCR2_TCIE);
 		writeb(temp, sport->port.membase + UARTCR2);
 	}
-	clk_disable_unprepare(sport->clk);
 
 	uart_suspend_port(&lpuart_reg, &sport->port);
+
+	if (sport->lpuart_dma_rx_use && sport->port.irq_wake &&
+		port->flags & ASYNC_INITIALIZED) {
+		/* it needs uart interrupt as wakeup source in low power mode */
+		lpuart_dma_stop(sport);
+		dmaengine_terminate_all(sport->dma_rx_chan);
+		del_timer_sync(&sport->lpuart_timer);
+		lpuart_dma_rx_free(&sport->port);
+		disable_irq(sport->port.irq);
+	}
+
+	if (sport->lpuart_dma_tx_use && sport->port.irq_wake &&
+		port->flags & ASYNC_INITIALIZED) {
+		temp = lpuart32_read(sport->port.membase + UARTBAUD);
+		temp &= ~UARTBAUD_TDMAE;
+		lpuart32_write(temp, sport->port.membase + UARTBAUD);
+		sport->dma_tx_in_progress = false;
+		dmaengine_terminate_all(sport->dma_tx_chan);
+		lpuart_dma_tx_free(&sport->port);
+	}
+
+	clk_disable_unprepare(sport->clk);
+	pinctrl_pm_select_sleep_state(dev);
 
 	return 0;
 }
@@ -2089,8 +2112,10 @@ static int lpuart_suspend(struct device *dev)
 static int lpuart_resume(struct device *dev)
 {
 	struct lpuart_port *sport = dev_get_drvdata(dev);
+	struct tty_port *port = &sport->port.state->port;
 	unsigned long temp;
 
+	pinctrl_pm_select_default_state(dev);
 	clk_prepare_enable(sport->clk);
 	if (sport->lpuart32) {
 		lpuart32_setup_watermark(sport);
@@ -2104,9 +2129,54 @@ static int lpuart_resume(struct device *dev)
 		temp |= (UARTCR2_RIE | UARTCR2_TIE | UARTCR2_RE | UARTCR2_TE);
 		writeb(temp, sport->port.membase + UARTCR2);
 	}
-	clk_disable_unprepare(sport->clk);
+
+	if (sport->dma_rx_chan) {
+		temp = lpuart32_read(sport->port.membase + UARTCTRL);
+		temp &= ~(UARTCTRL_RIE | UARTCTRL_ILIE | UARTCTRL_RE);
+		lpuart32_write(temp, sport->port.membase + UARTCTRL);
+	}
+
+	if (sport->dma_tx_chan) {
+		temp = lpuart32_read(sport->port.membase + UARTCTRL);
+		temp &= ~(UARTCTRL_TIE | UARTCTRL_TE);
+		lpuart32_write(temp, sport->port.membase + UARTCTRL);
+	}
+
+	if (sport->lpuart_dma_rx_use && sport->port.irq_wake &&
+		port->flags & ASYNC_INITIALIZED) {
+		if (!lpuart_dma_rx_request(&sport->port)) {
+			sport->lpuart_dma_rx_use = true;
+			setup_timer(&sport->lpuart_timer, lpuart_timer_func,
+				(unsigned long)sport);
+		} else {
+			sport->lpuart_dma_rx_use = false;
+		}
+
+		temp = lpuart32_read(sport->port.membase + UARTCTRL);
+		temp |= (UARTCTRL_RIE | UARTCTRL_ILIE | UARTCTRL_RE);
+		temp |= UARTCTRL_IDLECFG << UARTCTRL_IDLECFG_OFF;
+		lpuart32_write(temp, sport->port.membase + UARTCTRL);
+		enable_irq(sport->port.irq);
+	}
+
+	if (sport->lpuart_dma_tx_use && sport->port.irq_wake &&
+		port->flags & ASYNC_INITIALIZED) {
+		if (!lpuart_dma_tx_request(&sport->port)) {
+			init_waitqueue_head(&sport->dma_wait);
+			temp = lpuart32_read(sport->port.membase + UARTBAUD);
+			temp |= UARTBAUD_TDMAE;
+			lpuart32_write(temp, sport->port.membase + UARTBAUD);
+		} else {
+			sport->lpuart_dma_tx_use = false;
+		}
+
+		temp = lpuart32_read(sport->port.membase + UARTCTRL);
+		temp |= UARTCTRL_TE;
+		lpuart32_write(temp, sport->port.membase + UARTCTRL);
+	}
 
 	uart_resume_port(&lpuart_reg, &sport->port);
+	clk_disable_unprepare(sport->clk);
 
 	return 0;
 }
