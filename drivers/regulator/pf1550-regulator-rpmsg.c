@@ -324,8 +324,7 @@ static void rpmsg_regulator_remove(struct rpmsg_channel *rpdev)
 }
 
 static struct rpmsg_device_id rpmsg_regulator_id_table[] = {
-	/* { .name	= "rpmsg-regulator-channel" }, */
-	{ .name	= "rpmsg-openamp-demo-channel" },
+	{ .name	= "rpmsg-regulator-channel" },
 	{ },
 };
 
