@@ -199,6 +199,8 @@
 #define UARTDATA_MASK		0x3ff
 
 #define UARTMODIR_IREN		0x00020000
+#define UARTMODIR_RTSWATER_S	0x8
+#define UARTMODIR_RTSWATER_M	0x0000ff00
 #define UARTMODIR_TXCTSSRC	0x00000020
 #define UARTMODIR_TXCTSC	0x00000010
 #define UARTMODIR_RXRTSE	0x00000008
@@ -1000,12 +1002,16 @@ static void lpuart32_setup_watermark(struct lpuart_port *sport)
 	lpuart32_write(val, sport->port.membase + UARTFIFO);
 
 	/* set the watermark */
-	if (uart_console(&sport->port))
+	if (uart_console(&sport->port)) {
 		val = (0x1 << UARTWATER_RXWATER_OFF) |
 			(0x0 << UARTWATER_TXWATER_OFF);
-	else
+	} else {
+		val = lpuart32_read(sport->port.membase + UARTMODIR);
+		val = sport->rxfifo_watermark << UARTMODIR_RTSWATER_S;
+		lpuart32_write(val, sport->port.membase + UARTMODIR);
 		val = (0x1 << UARTWATER_RXWATER_OFF) |
 			(sport->txfifo_watermark << UARTWATER_TXWATER_OFF);
+	}
 	lpuart32_write(val, sport->port.membase + UARTWATER);
 
 	/* Restore cr2 */
@@ -1574,7 +1580,9 @@ lpuart32_set_termios(struct uart_port *port, struct ktermios *termios,
 	}
 
 	if (termios->c_cflag & CSTOPB)
-		termios->c_cflag &= ~CSTOPB;
+		bd |= UARTBAUD_SBNS;
+	else
+		bd &= ~UARTBAUD_SBNS;
 
 	/* parity must be enabled when CS7 to match 8-bits format */
 	if ((termios->c_cflag & CSIZE) == CS7)
@@ -1596,7 +1604,7 @@ lpuart32_set_termios(struct uart_port *port, struct ktermios *termios,
 	}
 
 	/* ask the core to calculate the divisor */
-	baud = uart_get_baud_rate(port, termios, old, 50, port->uartclk / 16);
+	baud = uart_get_baud_rate(port, termios, old, 50, port->uartclk / 4);
 
 	spin_lock_irqsave(&sport->port.lock, flags);
 
