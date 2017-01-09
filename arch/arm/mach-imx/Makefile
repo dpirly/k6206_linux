@@ -124,7 +124,7 @@ obj-$(CONFIG_SOC_IMX6SX) += clk-imx6sx.o mach-imx6sx.o ddr3_freq_imx6sx.o \
 obj-$(CONFIG_SOC_IMX6UL) += clk-imx6ul.o mach-imx6ul.o ddr3_freq_imx6sx.o \
 			    lpddr2_freq_imx6sx.o
 obj-$(CONFIG_SOC_IMX7D) += clk-imx7d.o mach-imx7d.o
-obj-$(CONFIG_SOC_IMX7ULP) += clk-imx7ulp.o mach-imx7ulp.o pm-imx7ulp.o
+obj-$(CONFIG_SOC_IMX7ULP) += clk-imx7ulp.o mach-imx7ulp.o pm-imx7ulp.o pm-rpmsg.o
 
 ifeq ($(CONFIG_SUSPEND),y)
 AFLAGS_suspend-imx6.o :=-Wa,-march=armv7-a
