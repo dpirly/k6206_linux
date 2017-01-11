@@ -24,6 +24,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_dma.h>
+#include <linux/reset.h>
 #include <linux/serial_core.h>
 #include <linux/slab.h>
 #include <linux/tty_flip.h>
@@ -1197,6 +1198,9 @@ static int lpuart32_startup(struct uart_port *port)
 	int ret;
 	unsigned long flags;
 	unsigned long temp;
+
+	/* some modem may need reset */
+	device_reset(sport->port.dev);
 
 	ret = clk_prepare_enable(sport->clk);
 	if (ret)
