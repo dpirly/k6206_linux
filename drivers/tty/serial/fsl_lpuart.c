@@ -2,6 +2,7 @@
  *  Freescale lpuart serial port driver
  *
  *  Copyright 2012-2014 Freescale Semiconductor, Inc.
+ *  Copyright 2017 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1200,7 +1201,9 @@ static int lpuart32_startup(struct uart_port *port)
 	unsigned long temp;
 
 	/* some modem may need reset */
-	device_reset(sport->port.dev);
+	ret = device_reset(sport->port.dev);
+	if (ret && ret != -ENODEV)
+		return ret;
 
 	ret = clk_prepare_enable(sport->clk);
 	if (ret)
