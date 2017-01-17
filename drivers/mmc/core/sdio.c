@@ -540,8 +540,8 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	 * SDR104 mode SD-cards. Note that tuning is mandatory for SDR104.
 	 */
 	if (!mmc_host_is_spi(card->host) &&
-	    ((card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR50) ||
-	     (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104)))
+	    ((card->host->ios.timing == MMC_TIMING_UHS_SDR50) ||
+	      (card->host->ios.timing == MMC_TIMING_UHS_SDR104)))
 		err = mmc_execute_tuning(card);
 out:
 	return err;
@@ -635,7 +635,7 @@ try_again:
 	 */
 	if (!powered_resume && (rocr & ocr & R4_18V_PRESENT)) {
 		err = mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_180,
-					ocr);
+					ocr_card);
 		if (err == -EAGAIN) {
 			sdio_reset(host);
 			mmc_go_idle(host);
@@ -806,6 +806,37 @@ remove:
 err:
 	return err;
 }
+
+int sdio_reset_comm(struct mmc_card *card)
+{
+	struct mmc_host *host = card->host;
+	u32 ocr;
+	u32 rocr;
+	int err;
+
+	mmc_claim_host(host);
+	mmc_go_idle(host);
+	mmc_set_clock(host, host->f_min);
+	err = mmc_send_io_op_cond(host, 0, &ocr);
+	if (err)
+		goto err;
+	rocr = mmc_select_voltage(host, ocr);
+	if (!rocr) {
+		err = -EINVAL;
+		goto err;
+	}
+	err = mmc_sdio_init_card(host, rocr, card, 0);
+	if (err)
+		goto err;
+	mmc_release_host(host);
+	return 0;
+err:
+	pr_err("%s: Error resetting SDIO communications (%d)\n",
+		mmc_hostname(host), err);
+	mmc_release_host(host);
+	return err;
+}
+EXPORT_SYMBOL(sdio_reset_comm);
 
 /*
  * Host is being removed. Free up the current card.

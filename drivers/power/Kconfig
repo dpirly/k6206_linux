@@ -447,6 +447,12 @@ config BATTERY_RT5033
 	  The fuelgauge calculates and determines the battery state of charge
 	  according to battery open circuit voltage.
 
+config CHARGER_PF1550
+	tristate "Freescale PF1550 battery charger driver"
+	depends on MFD_PF1550
+	help
+	  Say Y to enable support for the Freescale PF1550 battery charger.
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY

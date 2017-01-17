@@ -42,7 +42,7 @@
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		/* OOB_IRQ: ECSPI2_SCLK (gpio4 20) */
-		gpios = <&gpio4 20 GPIO_ACTIVE_HIGH>;
+		gpios = <&gpio4 20 0>;          /* WL_HOST_WAKE */
 		wlreg_on-supply = <&wlreg_on>;
 	};
 
@@ -607,7 +607,7 @@
 	imx7d-sdb {
 		pinctrl_hog_1: hoggrp-1 {
 			fsl,pins = <
-				MX7D_PAD_ECSPI2_SS0__GPIO4_IO23	0x80000000  /* bt reg on */
+				MX7D_PAD_ECSPI2_SS0__GPIO4_IO23 0x19 /* BT_REG_ON */
 				MX7D_PAD_EPDC_BDR0__GPIO2_IO28	0x59 /* headphone detect */
 			>;
 		};

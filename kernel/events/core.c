@@ -1567,14 +1567,14 @@ event_sched_out(struct perf_event *event,
 
 	perf_pmu_disable(event->pmu);
 
+	event->tstamp_stopped = tstamp;
+	event->pmu->del(event, 0);
+	event->oncpu = -1;
 	event->state = PERF_EVENT_STATE_INACTIVE;
 	if (event->pending_disable) {
 		event->pending_disable = 0;
 		event->state = PERF_EVENT_STATE_OFF;
 	}
-	event->tstamp_stopped = tstamp;
-	event->pmu->del(event, 0);
-	event->oncpu = -1;
 
 	if (!is_software_event(event))
 		cpuctx->active_oncpu--;
@@ -3319,7 +3319,7 @@ find_lively_task_by_vpid(pid_t vpid)
 
 	/* Reuse ptrace permission checks for now. */
 	err = -EACCES;
-	if (!ptrace_may_access(task, PTRACE_MODE_READ))
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS))
 		goto errout;
 
 	return task;
@@ -7636,6 +7636,9 @@ perf_event_alloc(struct perf_event_attr *attr, int cpu,
 		}
 	}
 
+	/* symmetric to unaccount_event() in _free_event() */
+	account_event(event);
+
 	return event;
 
 err_per_task:
@@ -8002,8 +8005,6 @@ SYSCALL_DEFINE5(perf_event_open,
 		}
 	}
 
-	account_event(event);
-
 	/*
 	 * Special case software events and allow them to be part of
 	 * any hardware group.
@@ -8219,7 +8220,12 @@ err_context:
 	perf_unpin_context(ctx);
 	put_ctx(ctx);
 err_alloc:
-	free_event(event);
+	/*
+	 * If event_file is set, the fput() above will have called ->release()
+	 * and that will take care of freeing the event.
+	 */
+	if (!event_file)
+		free_event(event);
 err_cpus:
 	put_online_cpus();
 err_task:
@@ -8262,8 +8268,6 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 
 	/* Mark owner so we could distinguish it from user events. */
 	event->owner = EVENT_OWNER_KERNEL;
-
-	account_event(event);
 
 	ctx = find_get_context(event->pmu, task, event);
 	if (IS_ERR(ctx)) {

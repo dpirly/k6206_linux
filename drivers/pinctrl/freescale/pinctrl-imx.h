@@ -81,11 +81,13 @@ struct imx_pinctrl_soc_info {
 	struct imx_pmx_func *functions;
 	unsigned int nfunctions;
 	unsigned int flags;
+	unsigned int mux_mask;
 	u32 grp_index;
 };
 
 #define SHARE_MUX_CONF_REG	0x1
 #define ZERO_OFFSET_VALID	0x2
+#define CONFIG_IBE_OBE		0x4
 
 #define NO_MUX		0x0
 #define NO_PAD		0x0

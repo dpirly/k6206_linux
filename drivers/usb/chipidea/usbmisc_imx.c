@@ -681,6 +681,10 @@ static int usbmisc_imx7d_init(struct imx_usbmisc_data *data)
 		writel(reg | MX6_BM_OVER_CUR_DIS, usbmisc->base);
 	}
 
+	/* SoC non-burst setting */
+	reg = readl(usbmisc->base);
+	writel(reg | MX6_BM_NON_BURST_SETTING, usbmisc->base);
+
 	reg = readl(usbmisc->base + MX7D_USBNC_USB_CTRL2);
 	reg &= ~MX7D_USB_VBUS_WAKEUP_SOURCE_MASK;
 	writel(reg | MX7D_USB_VBUS_WAKEUP_SOURCE_BVALID,
@@ -944,6 +948,12 @@ static const struct usbmisc_ops imx7d_usbmisc_ops = {
 	.term_select_override = usbmisc_term_select_override,
 };
 
+static const struct usbmisc_ops imx7ulp_usbmisc_ops = {
+	.init = usbmisc_imx7d_init,
+	.set_wakeup = usbmisc_imx7d_set_wakeup,
+	.power_lost_check = usbmisc_imx7d_power_lost_check,
+};
+
 int imx_usbmisc_init(struct imx_usbmisc_data *data)
 {
 	struct imx_usbmisc *usbmisc;
@@ -1135,6 +1145,10 @@ static const struct of_device_id usbmisc_imx_dt_ids[] = {
 	{
 		.compatible = "fsl,imx7d-usbmisc",
 		.data = &imx7d_usbmisc_ops,
+	},
+	{
+		.compatible = "fsl,imx7ulp-usbmisc",
+		.data = &imx7ulp_usbmisc_ops,
 	},
 	{ /* sentinel */ }
 };

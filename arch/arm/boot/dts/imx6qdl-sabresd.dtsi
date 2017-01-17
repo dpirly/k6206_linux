@@ -21,7 +21,6 @@
 		mxcfb3 = &mxcfb4;
 	};
 
-
 	hannstar_cabc {
 		compatible = "hannstar,cabc";
 		lvds0 {

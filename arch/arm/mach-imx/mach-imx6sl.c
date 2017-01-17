@@ -21,6 +21,7 @@
 
 #include "common.h"
 #include "cpuidle.h"
+#include "hardware.h"
 
 static void __init imx6sl_fec_clk_init(void)
 {
@@ -49,7 +50,11 @@ static void __init imx6sl_init_late(void)
 	if (IS_ENABLED(CONFIG_ARM_IMX6Q_CPUFREQ))
 		platform_device_register_simple("imx6q-cpufreq", -1, NULL, 0);
 
-	imx6sl_cpuidle_init();
+	/* cpuidle will be enabled later for i.MX6SLL */
+	if (cpu_is_imx6sll())
+		imx6sll_cpuidle_init();
+	else
+		imx6sl_cpuidle_init();
 }
 
 static void __init imx6sl_init_machine(void)
@@ -62,7 +67,8 @@ static void __init imx6sl_init_machine(void)
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
 
-	imx6sl_fec_init();
+	if (!cpu_is_imx6sll())
+		imx6sl_fec_init();
 	imx_anatop_init();
 	imx6sl_pm_init();
 }
@@ -84,6 +90,7 @@ static void __init imx6sl_map_io(void)
 	imx_busfreq_map_io();
 #endif
 }
+
 extern unsigned long int ramoops_phys_addr;
 extern unsigned long int ramoops_mem_size;
 static void imx6sl_reserve(void)
@@ -114,6 +121,7 @@ static void imx6sl_reserve(void)
 
 static const char * const imx6sl_dt_compat[] __initconst = {
 	"fsl,imx6sl",
+	"fsl,imx6sll",
 	NULL,
 };
 

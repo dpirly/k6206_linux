@@ -83,7 +83,6 @@ struct gadget_info {
 	struct list_head string_list;
 	struct list_head available_func;
 
-	const char *udc_name;
 	struct usb_composite_driver composite;
 	struct usb_composite_dev cdev;
 	bool use_os_desc;

@@ -316,6 +316,7 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6qp-sabresd-btwifi.dtb \
 	imx6qp-sabresd-hdcp.dtb \
 	imx6qp-sabresd-ldo.dtb \
+	imx6qp-sabresd-ldo-pcie-cert.dtb \
 	imx6q-sabrelite.dtb \
 	imx6q-sabresd.dtb \
 	imx6q-sabresd-btwifi.dtb \
@@ -331,9 +332,30 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6q-tx6q-1110.dtb \
 	imx6q-udoo.dtb \
 	imx6q-wandboard.dtb \
-	imx6q-wandboard-revb1.dtb
+	imx6q-wandboard-revb1.dtb \
+	imx6dqscm-1gb-qwks-rev2-fix-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev2-interleave-android-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev2-wifi-fix-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev2-hdcp-fix-ldo.dtb \
+	imx6dqscm-1gb-evb-fix-ldo.dtb \
+	imx6dqscm-1gb-evb-interleave-android-ldo.dtb \
+	imx6dqscm-1gb-evb-btwifi-fix-ldo.dtb \
+	imx6dqscm-1gb-evb-enetirq-fix-ldo.dtb \
+	imx6dqscm-1gb-evb-hdcp-fix-ldo.dtb \
+	imx6sxscm-1gb-evb-ldo.dtb \
+	imx6sxscm-1gb-evb-lcdif1-ldo.dtb \
+	imx6sxscm-1gb-evb-m4-ldo.dtb \
+	imx6sxscm-1gb-evb-mqs-ldo.dtb \
+	imx6sxscm-1gb-evb-sai-ldo.dtb \
+	imx6sxscm-1gb-evb-btwifi-ldo.dtb \
+	imx6sxscm-epop-evb-ldo.dtb \
+	imx6sxscm-epop-evb-m4-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev3-fix-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev3-hdcp-fix-ldo.dtb \
+	imx6dqscm-1gb-qwks-rev3-btwifi-fix-ldo.dtb
 dtb-$(CONFIG_SOC_IMX6SL) += \
 	imx6sl-evk.dtb \
+	imx6sl-evk-btwifi.dtb \
 	imx6sl-evk-ldo.dtb \
 	imx6sl-evk-csi.dtb \
 	imx6sl-evk-uart.dtb \
@@ -367,9 +389,11 @@ dtb-$(CONFIG_SOC_IMX6UL) += \
 	imx6ul-14x14-evk.dtb \
 	imx6ul-14x14-evk-btwifi.dtb \
 	imx6ul-14x14-evk-csi.dtb \
+	imx6ul-14x14-evk-emmc.dtb \
 	imx6ul-14x14-evk-gpmi-weim.dtb \
 	imx6ul-14x14-evk-usb-certi.dtb \
 	imx6ul-14x14-lpddr2-arm2.dtb \
+	imx6ul-14x14-evk-pf1550.dtb \
 	imx6ul-9x9-evk.dtb \
 	imx6ul-9x9-evk-btwifi.dtb \
 	imx6ul-9x9-evk-csi.dtb \
@@ -393,8 +417,20 @@ dtb-$(CONFIG_SOC_IMX6ULL) += \
 	imx6ull-14x14-ddr3-arm2-wm8958.dtb \
 	imx6ull-14x14-evk.dtb \
 	imx6ull-14x14-evk-btwifi.dtb \
+	imx6ull-14x14-evk-emmc.dtb \
 	imx6ull-14x14-evk-gpmi-weim.dtb \
-	imx6ull-14x14-evk-usb-certi.dtb
+	imx6ull-14x14-evk-usb-certi.dtb \
+	imx6ull-9x9-evk.dtb \
+	imx6ull-9x9-evk-btwifi.dtb
+dtb-$(CONFIG_SOC_IMX6SLL) += \
+	imx6sll-lpddr2-arm2.dtb \
+	imx6sll-lpddr3-arm2.dtb \
+	imx6sll-lpddr3-arm2-csi.dtb \
+	imx6sll-lpddr3-arm2-ecspi.dtb \
+	imx6sll-lpddr3-arm2-spdif.dtb \
+	imx6sll-evk.dtb \
+	imx6sll-evk-reva.dtb \
+	imx6sll-evk-btwifi.dtb
 dtb-$(CONFIG_SOC_IMX7D) += \
 	imx7d-12x12-lpddr3-arm2.dtb \
 	imx7d-12x12-lpddr3-arm2-m4.dtb \
@@ -422,6 +458,14 @@ dtb-$(CONFIG_SOC_IMX7D) += \
 	imx7d-sdb-reva-qspi.dtb \
 	imx7d-sdb-reva-touch.dtb \
 	imx7d-sdb-reva-wm8960.dtb
+dtb-$(CONFIG_SOC_IMX7ULP) += \
+	imx7ulp-14x14-arm2.dtb \
+	imx7ulp-evk.dtb \
+	imx7ulp-evk-emmc.dtb \
+	imx7ulp-evk-sd1.dtb \
+	imx7ulp-evk-lpuart.dtb \
+	imx7ulp-evk-qspi.dtb \
+	imx7ulp-evk-wm8960.dtb
 dtb-$(CONFIG_SOC_LS1021A) += \
 	ls1021a-qds.dtb \
 	ls1021a-twr.dtb
@@ -772,15 +816,5 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += \
 	mt8135-evbp1.dtb
 endif
 
-DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES))
-ifneq ($(DTB_NAMES),)
-DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
-else
-DTB_LIST := $(dtb-y)
-endif
-
-targets += dtbs dtbs_install
-targets += $(DTB_LIST)
-
-always		:= $(DTB_LIST)
+always		:= $(dtb-y)
 clean-files	:= *.dtb

@@ -31,7 +31,50 @@
  */
 u32 hw_read_otgsc(struct ci_hdrc *ci, u32 mask)
 {
-	return hw_read(ci, OP_OTGSC, mask);
+	struct ci_hdrc_cable *cable;
+	u32 val = hw_read(ci, OP_OTGSC, mask);
+
+	/*
+	 * If using extcon framework for VBUS and/or ID signal
+	 * detection overwrite OTGSC register value
+	 */
+	cable = &ci->platdata->vbus_extcon;
+	if (!IS_ERR(cable->edev)) {
+		if (cable->changed)
+			val |= OTGSC_BSVIS;
+		else
+			val &= ~OTGSC_BSVIS;
+
+		if (cable->connected)
+			val |= OTGSC_BSV;
+		else
+			val &= ~OTGSC_BSV;
+
+		if (cable->enabled)
+			val |= OTGSC_BSVIE;
+		else
+			val &= ~OTGSC_BSVIE;
+	}
+
+	cable = &ci->platdata->id_extcon;
+	if (!IS_ERR(cable->edev)) {
+		if (cable->changed)
+			val |= OTGSC_IDIS;
+		else
+			val &= ~OTGSC_IDIS;
+
+		if (cable->connected)
+			val &= ~OTGSC_ID; /* host */
+		else
+			val |= OTGSC_ID; /* device */
+
+		if (cable->enabled)
+			val |= OTGSC_IDIE;
+		else
+			val &= ~OTGSC_IDIE;
+	}
+
+	return val & mask;
 }
 
 /**
@@ -41,6 +84,36 @@ u32 hw_read_otgsc(struct ci_hdrc *ci, u32 mask)
  */
 void hw_write_otgsc(struct ci_hdrc *ci, u32 mask, u32 data)
 {
+	struct ci_hdrc_cable *cable;
+
+	cable = &ci->platdata->vbus_extcon;
+	if (!IS_ERR(cable->edev)) {
+		if (data & mask & OTGSC_BSVIS)
+			cable->changed = false;
+
+		/* Don't enable vbus interrupt if using external notifier */
+		if (data & mask & OTGSC_BSVIE) {
+			cable->enabled = true;
+			data &= ~OTGSC_BSVIE;
+		} else if (mask & OTGSC_BSVIE) {
+			cable->enabled = false;
+		}
+	}
+
+	cable = &ci->platdata->id_extcon;
+	if (!IS_ERR(cable->edev)) {
+		if (data & mask & OTGSC_IDIS)
+			cable->changed = false;
+
+		/* Don't enable id interrupt if using external notifier */
+		if (data & mask & OTGSC_IDIE) {
+			cable->enabled = true;
+			data &= ~OTGSC_IDIE;
+		} else if (mask & OTGSC_IDIE) {
+			cable->enabled = false;
+		}
+	}
+
 	hw_write(ci, OP_OTGSC, mask | OTGSC_INT_STATUS_BITS, data);
 }
 
@@ -108,7 +181,31 @@ void ci_handle_vbus_change(struct ci_hdrc *ci)
 		usb_gadget_vbus_disconnect(&ci->gadget);
 }
 
-#define CI_VBUS_STABLE_TIMEOUT_MS 5000
+/**
+ * When we switch to device mode, the vbus value should be lower
+ * than OTGSC_BSV before connecting to host.
+ *
+ * @ci: the controller
+ *
+ * This function returns an error code if timeout
+ */
+static int hw_wait_vbus_lower_bsv(struct ci_hdrc *ci)
+{
+	unsigned long elapse = jiffies + msecs_to_jiffies(5000);
+	u32 mask = OTGSC_BSV;
+
+	while (hw_read_otgsc(ci, mask)) {
+		if (time_after(jiffies, elapse)) {
+			dev_err(ci->dev, "timeout waiting for %08x in OTGSC\n",
+					mask);
+			return -ETIMEDOUT;
+		}
+		msleep(20);
+	}
+
+	return 0;
+}
+
 void ci_handle_id_switch(struct ci_hdrc *ci)
 {
 	enum ci_role role = ci_otg_role(ci);
@@ -127,9 +224,11 @@ void ci_handle_id_switch(struct ci_hdrc *ci)
 		ci_role_stop(ci);
 
 		if (role == CI_ROLE_GADGET)
-			/* wait vbus lower than OTGSC_BSV */
-			ret = hw_wait_reg(ci, OP_OTGSC, OTGSC_BSV, 0,
-					CI_VBUS_STABLE_TIMEOUT_MS);
+			/*
+			 * wait vbus lower than OTGSC_BSV before connecting
+			 * to host
+			 */
+			hw_wait_vbus_lower_bsv(ci);
 		else if (ci->vbus_active)
 			/*
 			 * If the role switch happens(e.g. during
@@ -220,7 +319,7 @@ static void ci_otg_work(struct work_struct *work)
 int ci_hdrc_otg_init(struct ci_hdrc *ci)
 {
 	INIT_WORK(&ci->work, ci_otg_work);
-	ci->wq = create_singlethread_workqueue("ci_otg");
+	ci->wq = create_freezable_workqueue("ci_otg");
 	if (!ci->wq) {
 		dev_err(ci->dev, "can't create workqueue\n");
 		return -ENODEV;

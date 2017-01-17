@@ -58,13 +58,16 @@
 			operating-points = <
 				/* kHz	uV */
 				528000	1175000
-				99000	950000
+				396000	1025000
+				198000	950000
 			>;
 			fsl,soc-operating-points = <
 				/* KHz	uV */
 				528000	1175000
-				99000	1175000
+				396000	1175000
+				198000	1175000
 			>;
+			fsl,low-power-run;
 			clocks = <&clks IMX6UL_CLK_ARM>,
 				 <&clks IMX6UL_CLK_PLL2_BUS>,
 				 <&clks IMX6UL_CLK_PLL2_PFD2>,
@@ -751,7 +754,8 @@
 			};
 
 			gpr: iomuxc-gpr@020e4000 {
-				compatible = "fsl,imx6ul-iomuxc-gpr", "syscon";
+				compatible = "fsl,imx6ul-iomuxc-gpr",
+					"fsl,imx6q-iomuxc-gpr", "syscon";
 				reg = <0x020e4000 0x4000>;
 			};
 
@@ -884,26 +888,32 @@
                         };
 
 			usdhc1: usdhc@02190000 {
-				compatible = "fsl,imx6ul-usdhc", "fsl,imx6sx-usdhc";
+				compatible = "fsl,imx6ull-usdhc", "fsl,imx6sx-usdhc";
 				reg = <0x02190000 0x4000>;
 				interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks IMX6UL_CLK_USDHC1>,
 					 <&clks IMX6UL_CLK_USDHC1>,
 					 <&clks IMX6UL_CLK_USDHC1>;
 				clock-names = "ipg", "ahb", "per";
+				assigned-clocks = <&clks IMX6UL_CLK_USDHC1_SEL>, <&clks IMX6UL_CLK_USDHC1>;
+				assigned-clock-parents = <&clks IMX6UL_CLK_PLL2_PFD2>;
+				assigned-clock-rates = <0>, <132000000>;
 				bus-width = <4>;
 				fsl,tuning-step= <2>;
 				status = "disabled";
 			};
 
 			usdhc2: usdhc@02194000 {
-				compatible = "fsl,imx6ul-usdhc", "fsl,imx6sx-usdhc";
+				compatible = "fsl,imx6ull-usdhc", "fsl,imx6sx-usdhc";
 				reg = <0x02194000 0x4000>;
 				interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks IMX6UL_CLK_USDHC2>,
 					 <&clks IMX6UL_CLK_USDHC2>,
 					 <&clks IMX6UL_CLK_USDHC2>;
 				clock-names = "ipg", "ahb", "per";
+				assigned-clocks = <&clks IMX6UL_CLK_USDHC2_SEL>, <&clks IMX6UL_CLK_USDHC2>;
+				assigned-clock-parents = <&clks IMX6UL_CLK_PLL2_PFD2>;
+				assigned-clock-rates = <0>, <132000000>;
 				bus-width = <4>;
 				fsl,tuning-step= <2>;
 				status = "disabled";
@@ -1108,18 +1118,20 @@
 			ranges;
 
 			dcp: dcp@02280000 {
+				compatible = "fsl,imx6sl-dcp";
 				reg = <0x02280000 0x4000>;
 				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>,
 					     <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>,
 					     <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
-				/*clocks = <&clks IMX6UL_CLK_DCP>;*/
+				clocks = <&clks IMX6UL_CLK_DCP_CLK>;
 				clock-names = "dcp";
-				status = "disabled";
 			};
 
 			rngb: rngb@02284000 {
+				compatible = "fsl,imx6sl-rng", "fsl,imx-rng", "imx-rng";
 				reg = <0x02284000 0x4000>;
 				interrupts = <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>;
+				clocks =  <&clks IMX6UL_CLK_DUMMY>;
 			};
 
 			uart8: serial@02288000 {

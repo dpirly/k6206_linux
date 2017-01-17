@@ -45,6 +45,7 @@
 #include <linux/kernel.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
+#include <linux/pm_qos.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/interrupt.h>
@@ -55,6 +56,8 @@
 #include <linux/fb.h>
 #include <linux/mxcfb.h>
 #include <linux/regulator/consumer.h>
+#include <linux/types.h>
+#include <linux/videodev2.h>
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
 #include <linux/uaccess.h>
@@ -88,6 +91,9 @@
 #define LCDC_V3_DATA			0x1b0
 #define LCDC_V4_DEBUG0			0x1d0
 #define LCDC_V3_DEBUG0			0x1f0
+#define LCDC_AS_CTRL			0x210
+#define LCDC_AS_BUF			0x220
+#define LCDC_AS_NEXT_BUF		0x230
 
 #define CTRL_SFTRST			(1 << 31)
 #define CTRL_CLKGATE			(1 << 30)
@@ -128,7 +134,7 @@
 						 CTRL1_VSYNC_EDGE_IRQ)
 #define CTRL1_IRQ_STATUS_SHIFT			8
 
-#define CTRL2_OUTSTANDING_REQS__REQ_16		(3 << 21)
+#define CTRL2_OUTSTANDING_REQS__REQ_16		(4 << 21)
 
 #define TRANSFER_COUNT_SET_VCOUNT(x)	(((x) & 0xffff) << 16)
 #define TRANSFER_COUNT_GET_VCOUNT(x)	(((x) >> 16) & 0xffff)
@@ -185,6 +191,7 @@
 enum mxsfb_devtype {
 	MXSFB_V3,
 	MXSFB_V4,
+	MXSFB_V5,
 };
 
 /* CPU dependent register offsets */
@@ -196,6 +203,33 @@ struct mxsfb_devdata {
 	unsigned hs_wdth_mask;
 	unsigned hs_wdth_shift;
 	unsigned ipversion;
+	u32 flags;
+};
+
+struct mxsfb_layer;
+
+struct mxsfb_layer_ops {
+	void (*enable)(struct mxsfb_layer *ofb);
+	void (*disable)(struct mxsfb_layer *ofb);
+	void (*setup)(struct mxsfb_layer *ofb);
+};
+
+struct mxsfb_layer {
+	struct fb_info		*ol_fb;
+	int			id;
+	int			registered;
+	atomic_t		usage;
+	int			blank_state;
+	uint32_t 		global_alpha;
+
+	struct mxsfb_layer_ops	*ops;
+
+	struct device		*dev;
+	void __iomem		*video_mem;
+	unsigned long		video_mem_phys;
+	size_t			video_mem_size;
+
+	struct mxsfb_info	*fbi;
 };
 
 struct mxsfb_info {
@@ -225,10 +259,20 @@ struct mxsfb_info {
 	struct mxc_dispdrv_handle *dispdrv;
 	int id;
 	struct fb_var_screeninfo var;
+	struct pm_qos_request pm_qos_req;
+
+#ifdef CONFIG_FB_MXC_OVERLAY
+	struct mxsfb_layer overlay;
+#endif
 };
 
 #define mxsfb_is_v3(host) (host->devdata->ipversion == 3)
 #define mxsfb_is_v4(host) (host->devdata->ipversion == 4)
+#define mxsfb_is_v5(host) (host->devdata->ipversion == 5)
+
+#define MXSFB_FLAG_NULL		0x0
+#define MXSFB_FLAG_BUSFREQ	0x1
+#define MXSFB_FLAG_PMQOS	0x2
 
 static const struct mxsfb_devdata mxsfb_devdata[] = {
 	[MXSFB_V3] = {
@@ -239,6 +283,7 @@ static const struct mxsfb_devdata mxsfb_devdata[] = {
 		.hs_wdth_mask = 0xff,
 		.hs_wdth_shift = 24,
 		.ipversion = 3,
+		.flags = MXSFB_FLAG_NULL,
 	},
 	[MXSFB_V4] = {
 		.transfer_count = LCDC_V4_TRANSFER_COUNT,
@@ -248,6 +293,17 @@ static const struct mxsfb_devdata mxsfb_devdata[] = {
 		.hs_wdth_mask = 0x3fff,
 		.hs_wdth_shift = 18,
 		.ipversion = 4,
+		.flags = MXSFB_FLAG_BUSFREQ,
+	},
+	[MXSFB_V5] = {
+		.transfer_count = LCDC_V4_TRANSFER_COUNT,
+		.cur_buf = LCDC_V4_CUR_BUF,
+		.next_buf = LCDC_V4_NEXT_BUF,
+		.debug0 = LCDC_V4_DEBUG0,
+		.hs_wdth_mask = 0x3fff,
+		.hs_wdth_shift = 18,
+		.ipversion = 4,
+		.flags = MXSFB_FLAG_PMQOS,
 	},
 };
 
@@ -340,6 +396,84 @@ static const struct fb_bitfield def_rgb565[] = {
 	}
 };
 
+#ifdef CONFIG_FB_MXC_OVERLAY
+static const struct fb_bitfield def_argb555[] = {
+	[RED] = {
+		.offset = 10,
+		.length = 5,
+	},
+	[GREEN] = {
+		.offset = 5,
+		.length = 5,
+	},
+	[BLUE] = {
+		.offset = 0,
+		.length = 5,
+	},
+	[TRANSP] = {
+		.offset = 15,
+		.length = 0,
+	}
+};
+
+static const struct fb_bitfield def_rgb555[] = {
+	[RED] = {
+		.offset = 10,
+		.length = 5,
+	},
+	[GREEN] = {
+		.offset = 5,
+		.length = 5,
+	},
+	[BLUE] = {
+		.offset = 0,
+		.length = 5,
+	},
+	[TRANSP] = {
+		.offset = 0,
+		.length = 0,
+	}
+};
+
+static const struct fb_bitfield def_argb444[] = {
+	[RED] = {
+		.offset = 8,
+		.length = 4,
+	},
+	[GREEN] = {
+		.offset = 4,
+		.length = 4,
+	},
+	[BLUE] = {
+		.offset = 0,
+		.length = 4,
+	},
+	[TRANSP] = {
+		.offset = 12,
+		.length = 4,
+	}
+};
+
+static const struct fb_bitfield def_rgb444[] = {
+	[RED] = {
+		.offset = 8,
+		.length = 4,
+	},
+	[GREEN] = {
+		.offset = 4,
+		.length = 4,
+	},
+	[BLUE] = {
+		.offset = 0,
+		.length = 4,
+	},
+	[TRANSP] = {
+		.offset = 0,
+		.length = 0,
+	}
+};
+#endif
+
 static const struct fb_bitfield def_rgb666[] = {
 	[RED] = {
 		.offset = 16,
@@ -373,6 +507,25 @@ static const struct fb_bitfield def_rgb888[] = {
 	},
 	[TRANSP] = {	/* no support for transparency */
 		.length = 0,
+	}
+};
+
+static const struct fb_bitfield def_argb32[] = {
+	[RED] = {
+		.offset = 16,
+		.length = 8,
+	},
+	[GREEN] = {
+		.offset = 8,
+		.length = 8,
+	},
+	[BLUE] = {
+		.offset = 0,
+		.length = 8,
+	},
+	[TRANSP] = {
+		.offset = 24,
+		.length = 8,
 	}
 };
 
@@ -528,6 +681,13 @@ static void mxsfb_enable_controller(struct fb_info *fb_info)
 		}
 	}
 
+	if (host->dispdrv && host->dispdrv->drv->enable) {
+		ret = host->dispdrv->drv->enable(host->dispdrv, fb_info);
+		if (ret < 0)
+			dev_err(&host->pdev->dev, "failed to enable "
+				"dispdrv:%s\n", host->dispdrv->drv->name);
+	}
+
 	/* the pixel clock should be disabled before
 	 * trying to set its clock rate successfully.
 	 */
@@ -568,12 +728,6 @@ static void mxsfb_enable_controller(struct fb_info *fb_info)
 
 	host->enabled = 1;
 
-	if (host->dispdrv && host->dispdrv->drv->enable) {
-		ret = host->dispdrv->drv->enable(host->dispdrv, fb_info);
-		if (ret < 0)
-			dev_err(&host->pdev->dev, "failed to enable "
-				"dispdrv:%s\n", host->dispdrv->drv->name);
-	}
 }
 
 static void mxsfb_disable_controller(struct fb_info *fb_info)
@@ -584,6 +738,8 @@ static void mxsfb_disable_controller(struct fb_info *fb_info)
 	int ret;
 
 	dev_dbg(&host->pdev->dev, "%s\n", __func__);
+
+	writel(CTRL_RUN, host->base + LCDC_CTRL + REG_CLR);
 
 	if (host->dispdrv && host->dispdrv->drv->disable)
 		host->dispdrv->drv->disable(host->dispdrv, fb_info);
@@ -875,6 +1031,7 @@ static int mxsfb_ioctl(struct fb_info *fb_info, unsigned int cmd,
 				ret = -EFAULT;
 			}
 		}
+		ret = mxsfb_wait_for_vsync(fb_info);
 		break;
 	default:
 		break;
@@ -1271,7 +1428,7 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host)
 	return 0;
 }
 
-static void mxsfb_dispdrv_init(struct platform_device *pdev,
+static int mxsfb_dispdrv_init(struct platform_device *pdev,
 			      struct fb_info *fbi)
 {
 	struct mxsfb_info *host = fbi->par;
@@ -1286,13 +1443,17 @@ static void mxsfb_dispdrv_init(struct platform_device *pdev,
 
 	host->dispdrv = mxc_dispdrv_gethandle(disp_dev, &setting);
 	if (IS_ERR(host->dispdrv)) {
+		if (PTR_ERR(host->dispdrv) == -EPROBE_DEFER)
+			return PTR_ERR(host->dispdrv);
+
 		host->dispdrv = NULL;
 		dev_info(dev, "failed to find mxc display driver %s\n",
 			 disp_dev);
-	} else {
+	} else
 		dev_info(dev, "registered mxc display driver %s\n",
 			 disp_dev);
-	}
+
+	return 0;
 }
 
 static ssize_t mxsfb_get_vsync(struct device *dev,
@@ -1314,6 +1475,7 @@ static ssize_t mxsfb_get_vsync(struct device *dev,
 }
 
 static DEVICE_ATTR(vsync, S_IRUGO, mxsfb_get_vsync, NULL);
+
 
 static void mxsfb_free_videomem(struct mxsfb_info *host)
 {
@@ -1385,6 +1547,9 @@ static struct platform_device_id mxsfb_devtype[] = {
 		.name = "imx28-fb",
 		.driver_data = MXSFB_V4,
 	}, {
+		.name = "imx7ulp-fb",
+		.driver_data = MXSFB_V5,
+	}, {
 		/* sentinel */
 	}
 };
@@ -1393,9 +1558,477 @@ MODULE_DEVICE_TABLE(platform, mxsfb_devtype);
 static const struct of_device_id mxsfb_dt_ids[] = {
 	{ .compatible = "fsl,imx23-lcdif", .data = &mxsfb_devtype[0], },
 	{ .compatible = "fsl,imx28-lcdif", .data = &mxsfb_devtype[1], },
+	{ .compatible = "fsl,imx7ulp-lcdif", .data = &mxsfb_devtype[2], },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, mxsfb_dt_ids);
+
+#ifdef CONFIG_FB_MXC_OVERLAY
+static int overlay_fmt_support(uint32_t fmt)
+{
+	switch (fmt) {
+	case V4L2_PIX_FMT_ARGB32:
+	case V4L2_PIX_FMT_XRGB32:
+		return 32;
+	case V4L2_PIX_FMT_ARGB555:
+	case V4L2_PIX_FMT_ARGB444:
+	case V4L2_PIX_FMT_XRGB555:
+	case V4L2_PIX_FMT_RGB444:
+	case V4L2_PIX_FMT_RGB565:
+		return 16;
+	default:
+		return -EINVAL;
+	}
+}
+
+/* alpha mode */
+#define ALPHA_CTRL_EMBEDDED	0x0
+#define ALPHA_CTRL_OVERRIDE	0x1
+#define ALPHA_CTRL_MULTIPLY	0x2
+#define ALPHA_CTRL_ROPS		0x3
+
+static void overlayfb_enable(struct mxsfb_layer *ofb)
+{
+	struct mxsfb_info *fbi = ofb->fbi;
+
+	if (!lock_fb_info(fbi->fb_info))
+		return;
+
+	if (fbi->cur_blank == FB_BLANK_UNBLANK) {
+		mxsfb_disable_controller(fbi->fb_info);
+		writel(CTRL1_FIFO_CLEAR, fbi->base + LCDC_CTRL1 + REG_SET);
+	}
+
+	writel(0x1, fbi->base + LCDC_AS_CTRL + REG_SET);
+
+	if (fbi->cur_blank == FB_BLANK_UNBLANK) {
+		writel(CTRL1_FIFO_CLEAR, fbi->base + LCDC_CTRL1 + REG_CLR);
+		mxsfb_enable_controller(fbi->fb_info);
+	}
+	unlock_fb_info(fbi->fb_info);
+}
+
+static void overlayfb_disable(struct mxsfb_layer *ofb)
+{
+	struct mxsfb_info *fbi = ofb->fbi;
+
+	writel(0x1, fbi->base + LCDC_AS_CTRL + REG_CLR);
+}
+
+static void overlayfb_setup(struct mxsfb_layer *ofb)
+{
+	uint32_t as_next_buf, as_ctrl = 0;
+	uint8_t format, alpha_ctrl, global_alpha_en = 0;
+	struct mxsfb_info *fbi = ofb->fbi;
+	struct fb_var_screeninfo *var = &ofb->ol_fb->var;
+
+	/* set fb1 framebuffer address */
+	as_next_buf = ofb->video_mem_phys;
+	writel(as_next_buf, fbi->base + LCDC_AS_NEXT_BUF);
+
+	/* clear the LCDC_AS_CTRL */
+	writel(0x0, fbi->base + LCDC_AS_CTRL);
+
+	switch (var->grayscale) {
+	case 0: /* color */
+		switch (var->bits_per_pixel) {
+		case 16: /* RGB565 */
+			format = 0xE;
+			global_alpha_en = 1;
+			break;
+		case 32: /* ARGB8888 */
+			format = 0x0;
+			break;
+		default:
+			return;
+		}
+		break;
+	case 1: /* grayscale */
+		return;
+	default:
+		switch (var->grayscale) {
+		case V4L2_PIX_FMT_ARGB32:
+			format = 0x0;
+			break;
+		case V4L2_PIX_FMT_XRGB32:
+			format = 0x4;
+			global_alpha_en = 1;
+			break;
+		case V4L2_PIX_FMT_ARGB555:
+			format = 0x8;
+			break;
+		case V4L2_PIX_FMT_ARGB444:
+			format = 0x9;
+			break;
+		case V4L2_PIX_FMT_RGB555:
+			format = 0xC;
+			global_alpha_en = 1;
+			break;
+		case V4L2_PIX_FMT_RGB444:
+			format = 0xD;
+			global_alpha_en = 1;
+			break;
+		case V4L2_PIX_FMT_RGB565:
+			format = 0xE;
+			global_alpha_en = 1;
+			break;
+		default:
+			return;
+		}
+		break;
+	}
+	as_ctrl |= ((format & 0xf) << 4);
+
+	alpha_ctrl = global_alpha_en ? ALPHA_CTRL_OVERRIDE :
+				       ALPHA_CTRL_EMBEDDED;
+	as_ctrl |= ((alpha_ctrl & 0x3) << 1);
+	if (global_alpha_en)
+		as_ctrl |= ((ofb->global_alpha & 0xff) << 8);
+
+	writel(as_ctrl, fbi->base + LCDC_AS_CTRL);
+}
+
+static struct mxsfb_layer_ops ofb_ops = {
+	.enable		= overlayfb_enable,
+	.disable	= overlayfb_disable,
+	.setup		= overlayfb_setup,
+};
+
+static int overlayfb_open(struct fb_info *info, int user)
+{
+	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
+	struct mxsfb_info  *fbi = ofb->fbi;
+
+	if (atomic_inc_return(&ofb->usage) == 1) {
+		memset((void*)&info->var, 0x0, sizeof(info->var));
+
+		ofb->ol_fb->var.xres		= fbi->fb_info->var.xres;
+		ofb->ol_fb->var.yres		= fbi->fb_info->var.yres;
+		ofb->ol_fb->var.xres_virtual	= fbi->fb_info->var.xres_virtual;
+		ofb->ol_fb->var.yres_virtual	= fbi->fb_info->var.yres;
+		ofb->ol_fb->var.bits_per_pixel	= fbi->fb_info->var.bits_per_pixel;
+		ofb->ol_fb->var.vmode		= FB_VMODE_NONINTERLACED;
+	}
+
+	return 0;
+}
+
+static int overlayfb_release(struct fb_info *info, int user)
+{
+	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
+	struct mxsfb_info *fbi = ofb->fbi;
+
+	BUG_ON(!atomic_read(&ofb->usage));
+
+	if (atomic_dec_return(&ofb->usage) == 0) {
+		if (ofb->blank_state == FB_BLANK_UNBLANK)
+			ofb->ops->disable(ofb);
+
+		ofb->blank_state = -1;
+		writel(0x0, fbi->base + LCDC_AS_CTRL);
+		writel(0x0, fbi->base + LCDC_AS_NEXT_BUF);
+	}
+
+	return 0;
+}
+
+static void fill_fmt_bitfields(struct fb_var_screeninfo *var,
+			       const struct fb_bitfield *color)
+{
+	var->red    = color[RED];
+	var->green  = color[GREEN];
+	var->blue   = color[BLUE];
+	var->transp = color[TRANSP];
+}
+
+static int overlayfb_check_var(struct fb_var_screeninfo *var,
+			       struct fb_info *info)
+{
+	int bpp;
+	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
+	struct mxsfb_info *fbi  = ofb->fbi;
+	const struct fb_bitfield *rgb = NULL;
+
+	/* lcdif doesn't support different bpp of AS and PS */
+	if (var->bits_per_pixel != fbi->fb_info->var.bits_per_pixel)
+		return -EINVAL;
+
+	/* overlay width & should be equal to fb0 */
+	if ((var->xres != fbi->fb_info->var.xres) ||
+	    (var->yres != fbi->fb_info->var.yres))
+		return -EINVAL;
+
+	if ((var->xres > 2048) || (var->yres > 2048))
+		return -EINVAL;
+
+	if (var->xres_virtual > var->xres)
+		return -EINVAL;
+
+	if (var->xres_virtual < var->xres)
+		var->xres_virtual = var->xres;
+	if (var->yres_virtual < var->yres)
+		var->yres_virtual = var->yres;
+
+	switch (var->grayscale) {
+	case 0:		/* color */
+		switch (var->bits_per_pixel) {
+		case 16:/* RGB565 */
+			rgb = def_rgb565;
+			break;
+		case 32:/* ARGB8888 */
+			rgb = def_argb32;
+			break;
+		default:
+			return -EINVAL;
+		}
+		break;
+	case 1:		/* grayscale */
+		return -EINVAL;
+	default:	/* fourcc */
+		if ((bpp = overlay_fmt_support(var->grayscale)) < 0) {
+			dev_err(info->dev, "unsupport pixel format for overlay\n");
+			return -EINVAL;
+		}
+
+		var->bits_per_pixel = bpp;
+		if (var->bits_per_pixel < 16)
+			return -EINVAL;
+
+		switch (var->grayscale) {
+		case V4L2_PIX_FMT_ARGB32:
+			rgb = def_argb32;
+			break;
+		case V4L2_PIX_FMT_XRGB32:
+			rgb = def_rgb888;
+			break;
+		case V4L2_PIX_FMT_ARGB555:
+			rgb = def_argb555;
+			break;
+		case V4L2_PIX_FMT_ARGB444:
+			rgb = def_argb444;
+			break;
+		case V4L2_PIX_FMT_RGB555:
+			rgb = def_rgb555;
+			break;
+		case V4L2_PIX_FMT_RGB444:
+			rgb = def_rgb444;
+			break;
+		case V4L2_PIX_FMT_RGB565:
+			rgb = def_rgb565;
+			break;
+		}
+		break;
+	}
+
+        if (var->xres_virtual * var->yres_virtual * var->bits_per_pixel / 8 >
+            info->fix.smem_len)
+		return -EINVAL;
+
+	fill_fmt_bitfields(var, rgb);
+
+	return 0;
+}
+
+static int overlayfb_set_par(struct fb_info *info)
+{
+	int size, bpp;
+	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
+	struct fb_var_screeninfo *var = &ofb->ol_fb->var;
+
+	bpp = var->bits_per_pixel;
+	ofb->ol_fb->fix.line_length = var->xres_virtual * bpp / 8;
+
+	size = PAGE_ALIGN(ofb->ol_fb->fix.line_length * var->yres_virtual);
+	if (ofb->video_mem_size < size)
+		return -EINVAL;
+
+	if (ofb->blank_state == FB_BLANK_UNBLANK)
+		ofb->ops->disable(ofb);
+
+	ofb->ops->setup(ofb);
+
+	if (ofb->blank_state == FB_BLANK_UNBLANK)
+		ofb->ops->enable(ofb);
+
+	if ((var->activate & FB_ACTIVATE_FORCE) &&
+	    (var->activate & FB_ACTIVATE_MASK) == FB_ACTIVATE_NOW)
+		var->activate = FB_ACTIVATE_NOW;
+
+	return 0;
+}
+
+static int overlayfb_blank(int blank, struct fb_info *info)
+{
+	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
+
+	if (ofb->blank_state == blank)
+		return 0;
+
+	switch (blank) {
+	case FB_BLANK_POWERDOWN:
+	case FB_BLANK_VSYNC_SUSPEND:
+	case FB_BLANK_HSYNC_SUSPEND:
+	case FB_BLANK_NORMAL:
+		ofb->ops->disable(ofb);
+		break;
+	case FB_BLANK_UNBLANK:
+		ofb->ops->enable(ofb);
+		break;
+	}
+
+	ofb->blank_state = blank;
+
+	return 0;
+}
+
+static int overlayfb_pan_display(struct fb_var_screeninfo *var,
+				 struct fb_info *info)
+{
+	int ret = 0;
+	unsigned int bytes_offset;
+	struct mxsfb_layer *ofb = (struct mxsfb_layer *)info->par;
+	struct mxsfb_info  *fbi = ofb->fbi;
+
+	init_completion(&fbi->flip_complete);
+
+	bytes_offset = info->fix.line_length * var->yoffset;
+	writel(info->fix.smem_start + bytes_offset,
+	       fbi->base + LCDC_AS_NEXT_BUF);
+
+	/* update on next VSYNC */
+	writel(CTRL1_CUR_FRAME_DONE_IRQ_EN,
+	       fbi->base + LCDC_CTRL1 + REG_SET);
+
+	ret = wait_for_completion_timeout(&fbi->flip_complete, HZ / 2);
+	if (!ret) {
+		dev_err(info->device,
+			"overlay wait for pane flip timeout\n");
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static struct fb_ops overlay_fb_ops = {
+	.owner		= THIS_MODULE,
+	.fb_open	= overlayfb_open,
+	.fb_release	= overlayfb_release,
+	.fb_check_var	= overlayfb_check_var,
+	.fb_set_par	= overlayfb_set_par,
+	.fb_blank	= overlayfb_blank,
+	.fb_pan_display = overlayfb_pan_display,
+	.fb_mmap 	= mxsfb_mmap,
+};
+
+static void init_mxsfb_overlay(struct mxsfb_info *fbi,
+			       struct mxsfb_layer *ofb)
+{
+	dev_dbg(&fbi->pdev->dev, "AS overlay init\n");
+
+	ofb->ol_fb->fix.type		= FB_TYPE_PACKED_PIXELS;
+	ofb->ol_fb->fix.xpanstep	= 0;
+	ofb->ol_fb->fix.ypanstep	= 1;
+	ofb->ol_fb->fix.ywrapstep 	= 1;
+	ofb->ol_fb->fix.visual		= FB_VISUAL_TRUECOLOR;
+	ofb->ol_fb->fix.accel		= FB_ACCEL_NONE;
+
+	ofb->ol_fb->var.activate	= FB_ACTIVATE_NXTOPEN;
+	ofb->ol_fb->var.xres		= fbi->fb_info->var.xres;
+	ofb->ol_fb->var.yres		= fbi->fb_info->var.yres;
+	ofb->ol_fb->var.xres_virtual	= fbi->fb_info->var.xres_virtual;
+	ofb->ol_fb->var.yres_virtual	= fbi->fb_info->var.yres;
+	ofb->ol_fb->var.bits_per_pixel	= fbi->fb_info->var.bits_per_pixel;
+	ofb->ol_fb->var.vmode		= FB_VMODE_NONINTERLACED;
+	ofb->ol_fb->var.nonstd		= 0;
+
+	ofb->ol_fb->fbops = &overlay_fb_ops;
+	ofb->ol_fb->node  = -1;
+	ofb->ol_fb->par	  = ofb;
+
+	ofb->id = 0;
+	ofb->ops = &ofb_ops;
+	atomic_set(&ofb->usage, 0);
+	ofb->blank_state = -1;
+	ofb->global_alpha = 255;
+	ofb->fbi = fbi;
+}
+
+static int mxsfb_overlay_map_video_memory(struct mxsfb_info *fbi,
+					  struct mxsfb_layer *ofb)
+{
+	struct fb_info *fb = fbi->fb_info;
+	BUG_ON(!fb->fix.smem_len);
+
+	ofb->video_mem_size = fb->fix.smem_len;
+	ofb->video_mem = dma_alloc_writecombine(ofb->dev,
+						ofb->video_mem_size,
+						(dma_addr_t *)&ofb->video_mem_phys,
+						GFP_DMA | GFP_KERNEL);
+
+	if (ofb->video_mem == NULL) {
+		dev_err(ofb->dev, "Unable to allocate overlay fb memory\n");
+		return -ENOMEM;
+	}
+
+	ofb->ol_fb->fix.smem_start = ofb->video_mem_phys;
+	ofb->ol_fb->fix.smem_len   = ofb->video_mem_size;
+	ofb->ol_fb->screen_base    = ofb->video_mem;
+
+	return 0;
+}
+
+static void mxsfb_overlay_init(struct mxsfb_info *fbi)
+{
+	int ret;
+	struct mxsfb_layer *ofb = &fbi->overlay;
+
+	ofb->dev = &fbi->pdev->dev;
+	ofb->ol_fb = framebuffer_alloc(0, ofb->dev);
+	if (!ofb->ol_fb) {
+		dev_err(ofb->dev, "Faild to allocate overlay fbinfo\n");
+		return;
+	}
+
+	init_mxsfb_overlay(fbi, ofb);
+
+	ret = register_framebuffer(ofb->ol_fb);
+	if (ret) {
+		dev_err(ofb->dev, "failed to register overlay\n");
+		goto fb_release;
+	}
+
+	ret = mxsfb_overlay_map_video_memory(fbi, ofb);
+	if (ret) {
+		dev_err(ofb->dev, "failed to map video mem for overlay\n");
+		goto fb_unregister;
+	}
+	ofb->registered = 1;
+
+	return;
+
+fb_unregister:
+	unregister_framebuffer(ofb->ol_fb);
+fb_release:
+	framebuffer_release(ofb->ol_fb);
+}
+
+static void mxsfb_overlay_exit(struct mxsfb_info *fbi)
+{
+	struct mxsfb_layer *ofb = &fbi->overlay;
+
+	if (ofb->registered) {
+		if (ofb->video_mem)
+			dma_free_writecombine(ofb->dev, ofb->video_mem_size,
+					ofb->video_mem, ofb->video_mem_phys);
+
+		unregister_framebuffer(ofb->ol_fb);
+		framebuffer_release(ofb->ol_fb);
+	}
+}
+#else
+static void mxsfb_overlay_init(struct mxsfb_info *fbi) {}
+static void mxsfb_overlay_exit(struct mxsfb_info *fbi) {}
+#endif
 
 static int mxsfb_probe(struct platform_device *pdev)
 {
@@ -1435,7 +2068,7 @@ static int mxsfb_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	fb_info = framebuffer_alloc(sizeof(struct fb_info), &pdev->dev);
+	fb_info = framebuffer_alloc(0, &pdev->dev);
 	if (!fb_info) {
 		dev_err(&pdev->dev, "Failed to allocate fbdev\n");
 		devm_kfree(&pdev->dev, host);
@@ -1505,7 +2138,13 @@ static int mxsfb_probe(struct platform_device *pdev)
 	if (ret != 0)
 		goto fb_pm_runtime_disable;
 
-	mxsfb_dispdrv_init(pdev, fb_info);
+	ret = mxsfb_dispdrv_init(pdev, fb_info);
+	if (ret != 0) {
+		if (ret == -EPROBE_DEFER)
+			dev_info(&pdev->dev,
+				 "Defer fb probe due to dispdrv not ready\n");
+		goto fb_pm_runtime_disable;
+	}
 
 	if (!host->dispdrv) {
 		pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
@@ -1528,6 +2167,8 @@ static int mxsfb_probe(struct platform_device *pdev)
 		goto fb_destroy;
 	}
 
+	mxsfb_overlay_init(host);
+
 	console_lock();
 	ret = fb_blank(fb_info, FB_BLANK_UNBLANK);
 	console_unlock();
@@ -1547,10 +2188,12 @@ static int mxsfb_probe(struct platform_device *pdev)
 fb_unregister:
 	unregister_framebuffer(fb_info);
 fb_destroy:
-	if (host->enabled)
-		clk_disable_unprepare(host->clk_pix);
 	fb_destroy_modelist(&fb_info->modelist);
 fb_pm_runtime_disable:
+	clk_disable_pix(host);
+	clk_disable_axi(host);
+	clk_disable_disp_axi(host);
+
 	pm_runtime_disable(&host->pdev->dev);
 	devm_kfree(&pdev->dev, fb_info->pseudo_palette);
 fb_release:
@@ -1569,7 +2212,11 @@ static int mxsfb_remove(struct platform_device *pdev)
 	if (host->enabled)
 		mxsfb_disable_controller(fb_info);
 
+	if (host->devdata->flags & MXSFB_FLAG_PMQOS)
+		pm_qos_remove_request(&host->pm_qos_req);
+
 	pm_runtime_disable(&host->pdev->dev);
+	mxsfb_overlay_exit(host);
 	unregister_framebuffer(fb_info);
 	mxsfb_free_videomem(host);
 
@@ -1599,7 +2246,14 @@ static void mxsfb_shutdown(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int mxsfb_runtime_suspend(struct device *dev)
 {
-	release_bus_freq(BUS_FREQ_HIGH);
+	struct mxsfb_info *host = dev_get_drvdata(dev);
+
+	if (host->devdata->flags & MXSFB_FLAG_BUSFREQ)
+		release_bus_freq(BUS_FREQ_HIGH);
+
+	if (host->devdata->flags & MXSFB_FLAG_PMQOS)
+		pm_qos_remove_request(&host->pm_qos_req);
+
 	dev_dbg(dev, "mxsfb busfreq high release.\n");
 
 	return 0;
@@ -1607,7 +2261,15 @@ static int mxsfb_runtime_suspend(struct device *dev)
 
 static int mxsfb_runtime_resume(struct device *dev)
 {
-	request_bus_freq(BUS_FREQ_HIGH);
+	struct mxsfb_info *host = dev_get_drvdata(dev);
+
+	if (host->devdata->flags & MXSFB_FLAG_BUSFREQ)
+		request_bus_freq(BUS_FREQ_HIGH);
+
+	if (host->devdata->flags & MXSFB_FLAG_PMQOS)
+		pm_qos_add_request(&host->pm_qos_req,
+			PM_QOS_CPU_DMA_LATENCY, 0);
+
 	dev_dbg(dev, "mxsfb busfreq high request.\n");
 
 	return 0;

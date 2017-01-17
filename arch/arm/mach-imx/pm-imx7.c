@@ -266,11 +266,10 @@ static const u32 imx7d_ddrc_phy_lpddr3_setting[][2] __initconst = {
 	{ 0x30, READ_DATA_FROM_HARDWARE },
 	{ 0x50, 0x01000008 },
 	{ 0x50, 0x00000008 },
-	{ 0xc0, 0x0e407304 },
-	{ 0xc0, 0x0e447304 },
-	{ 0xc0, 0x0e447306 },
+	{ 0xc0, 0x0e487304 },
 	{ 0xc0, 0x0e4c7304 },
-	{ 0xc0, 0x0e487306 },
+	{ 0xc0, 0x0e4c7306 },
+	{ 0xc0, 0x0e487304 },
 };
 
 static const u32 imx7d_ddrc_ddr3_setting[][2] __initconst = {
@@ -298,6 +297,7 @@ static const u32 imx7d_ddrc_ddr3_setting[][2] __initconst = {
 	{ 0x194, READ_DATA_FROM_HARDWARE },
 	{ 0x200, READ_DATA_FROM_HARDWARE },
 	{ 0x204, READ_DATA_FROM_HARDWARE },
+	{ 0x210, READ_DATA_FROM_HARDWARE },
 	{ 0x214, READ_DATA_FROM_HARDWARE },
 	{ 0x218, READ_DATA_FROM_HARDWARE },
 	{ 0x240, READ_DATA_FROM_HARDWARE },
@@ -322,8 +322,7 @@ static const u32 imx7d_ddrc_phy_ddr3_setting[][2] __initconst = {
 	{ 0xc0, 0x0e407304 },
 	{ 0xc0, 0x0e447304 },
 	{ 0xc0, 0x0e447306 },
-	{ 0xc0, 0x0e447304 },
-	{ 0xc0, 0x0e407306 },
+	{ 0xc0, 0x0e407304 },
 };
 
 static const struct imx7_pm_socdata imx7d_pm_data_lpddr3 __initconst = {
