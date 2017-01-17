@@ -112,6 +112,17 @@ enum mx3_cpu_pwr_mode {
 	MX3_SLEEP,
 };
 
+enum imx7ulp_cpu_pwr_mode {
+	HSRUN,
+	RUN,
+	VLPR,
+	WAIT,
+	VLPW,
+	STOP,
+	VLPS,
+	VLLS,
+};
+
 void mx3_cpu_lp_set(enum mx3_cpu_pwr_mode mode);
 void imx_print_silicon_rev(const char *cpu, int srev);
 
@@ -129,6 +140,7 @@ static inline void imx_smp_prepare(void) {}
 #endif
 void imx6_pm_map_io(void);
 void imx7_pm_map_io(void);
+void imx7ulp_pm_map_io(void);
 void imx_src_init(void);
 void imx_gpc_pre_suspend(bool arm_power_off);
 void imx_gpc_post_resume(void);
@@ -166,6 +178,7 @@ int imx6q_set_lpm(enum mxc_cpu_pwr_mode mode);
 void imx6q_set_int_mem_clk_lpm(bool enable);
 void imx6sl_set_wait_clk(bool enter);
 void imx6_enet_mac_init(const char *enet_compat, const char *ocotp_compat);
+int imx7ulp_set_lpm(enum imx7ulp_cpu_pwr_mode mode);
 #ifdef CONFIG_HAVE_IMX_MMDC
 int imx_mmdc_get_ddr_type(void);
 #else
@@ -184,18 +197,24 @@ void imx6sx_low_power_idle(void);
 void imx6ul_low_power_idle(void);
 void imx6ull_low_power_idle(void);
 void imx6sl_low_power_idle(void);
+void imx6sll_low_power_idle(void);
 bool imx_gpc_usb_wakeup_enabled(void);
+bool imx_gpc_enet_wakeup_enabled(void);
 
 #ifdef CONFIG_SUSPEND
 void v7_cpu_resume(void);
 void ca7_cpu_resume(void);
+void imx7ulp_cpu_resume(void);
 void imx6_suspend(void __iomem *ocram_vbase);
 void imx7_suspend(void __iomem *ocram_vbase);
+void imx7ulp_suspend(void __iomem *ocram_vbase);
 #else
 static inline void v7_cpu_resume(void) {}
 static inline void ca7_cpu_resume(void) {}
+static inline void imx7ulp_cpu_resume(void) {}
 static inline void imx6_suspend(void __iomem *ocram_vbase) {}
 static inline void imx7_suspend(void __iomem *ocram_vbase) {}
+static inline void imx7ulp_suspend(void __iomem *ocram_vbase) {}
 #endif
 
 void imx7_pm_init(void);
@@ -206,6 +225,8 @@ void imx6sl_pm_init(void);
 void imx6sx_pm_init(void);
 void imx6ul_pm_init(void);
 void imx6ull_pm_init(void);
+void imx7ulp_pm_init(void);
+void imx7ulp_enable_nmi(void);
 void imx6q_pm_set_ccm_base(void __iomem *base);
 
 #ifdef CONFIG_PM

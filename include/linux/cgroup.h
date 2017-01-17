@@ -489,7 +489,6 @@ struct cgroup_subsys_state *cgroup_get_e_css(struct cgroup *cgroup,
 					     struct cgroup_subsys *ss);
 struct cgroup_subsys_state *css_tryget_online_from_dir(struct dentry *dentry,
 						       struct cgroup_subsys *ss);
-
 /*
  * Default Android check for whether the current process is allowed to move a
  * task across cgroups, either because CAP_SYS_NICE is set or because the uid
@@ -499,6 +498,7 @@ struct cgroup_subsys_state *css_tryget_online_from_dir(struct dentry *dentry,
  */
 int subsys_cgroup_allow_attach(struct cgroup_subsys_state *css,
 			       struct cgroup_taskset *tset);
+
 
 
 #else /* !CONFIG_CGROUPS */

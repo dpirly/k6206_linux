@@ -31,6 +31,29 @@
 		reg = <0x60000000 0x40000000>;
 	};
 
+	backlight {
+		compatible = "gpio-backlight";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_backlight>;
+		gpios = <&gpio3 2 GPIO_ACTIVE_HIGH>;
+		default-on;
+		status = "okay";
+	};
+
+	mipi_dsi_reset: mipi-dsi-reset {
+		compatible = "gpio-reset";
+		reset-gpios = <&gpio0 19 GPIO_ACTIVE_LOW>;
+		reset-delay-us = <1000>;
+		#reset-cells = <0>;
+	};
+
+	modem_reset: modem-reset {
+		compatible = "gpio-reset";
+		reset-gpios = <&gpio2 7 GPIO_ACTIVE_LOW>;
+		reset-delay-us = <1000>;
+		#reset-cells = <0>;
+	};
+
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -49,12 +72,33 @@
 		reg_usb_otg1_vbus: regulator@0 {
 			compatible = "regulator-fixed";
 			reg = <0>;
-			pinctrl-names = "default";
+			pinctrl-names = "default", "sleep";
 			pinctrl-0 = <&pinctrl_usb_otg1>;
+			pinctrl-1 = <&pinctrl_usb_otg1>;
 			regulator-name = "usb_otg1_vbus";
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
 			gpio = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+			enable-active-high;
+		};
+
+		reg_vsd_3v3: regulator@1 {
+			compatible = "regulator-fixed";
+			reg = <1>;
+			regulator-name = "VSD_3V3";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			gpio = <&gpio1 0 GPIO_ACTIVE_HIGH>;
+			enable-active-high;
+		};
+
+		reg_vsd_3v3b: regulator@2 {
+			compatible = "regulator-fixed";
+			reg = <2>;
+			regulator-name = "VSD_3V3B";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			gpio = <&gpio2 11 GPIO_ACTIVE_HIGH>;
 			enable-active-high;
 		};
 	};
@@ -62,8 +106,9 @@
 	extcon_usb1: extcon_usb1 {
 		compatible = "linux,extcon-usb-gpio";
 		id-gpio = <&gpio0 8 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
+		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pinctrl_extcon_usb1>;
+		pinctrl-1 = <&pinctrl_extcon_usb1>;
 	};
 
 	pf1550-rpmsg {
@@ -130,8 +175,13 @@
 	imx7ulp-evk {
 		pinctrl_hog_1: hoggrp-1 {
 			fsl,pins = <
-				ULP1_PAD_PTC10__PTC10		0x30100
 				ULP1_PAD_PTC1__PTC1		0x20100
+			>;
+		};
+
+		pinctrl_backlight: backlight_grp {
+			fsl,pins = <
+				ULP1_PAD_PTF2__PTF2		0x20100
 			>;
 		};
 
@@ -142,40 +192,48 @@
 			>;
 		};
 
+		pinctrl_mipi_dsi_reset: mipi_dsi_reset_grp {
+			fsl,pins = <
+				ULP1_PAD_PTC19__PTC19		0x20103
+			>;
+		};
+
 		pinctrl_lpuart4: lpuart4grp {
 			fsl,pins = <
-				ULP1_PAD_PTC3__LPUART4_RX	0x400
-				ULP1_PAD_PTC2__LPUART4_TX	0x400
+				ULP1_PAD_PTC3__LPUART4_RX	0x403
+				ULP1_PAD_PTC2__LPUART4_TX	0x403
 			>;
 		};
 
 		pinctrl_lpuart6: lpuart6grp {
 			fsl,pins = <
-				ULP1_PAD_PTE10__LPUART6_TX	0x400
-				ULP1_PAD_PTE11__LPUART6_RX	0x400
-				ULP1_PAD_PTE9__LPUART6_RTS_B	0x400
-				ULP1_PAD_PTE8__LPUART6_CTS_B	0x400
-				ULP1_PAD_PTE7__PTE7		0x00 /* BT_REG_ON */
+				ULP1_PAD_PTE10__LPUART6_TX	0x403
+				ULP1_PAD_PTE11__LPUART6_RX	0x403
+				ULP1_PAD_PTE9__LPUART6_RTS_B	0x403
+				ULP1_PAD_PTE8__LPUART6_CTS_B	0x403
+				ULP1_PAD_PTE7__PTE7		0x20000 /* BT_REG_ON */
 			>;
 		};
 
 		pinctrl_lpuart7: lpuart7grp {
 			fsl,pins = <
-				ULP1_PAD_PTF14__LPUART7_TX	0x400
-				ULP1_PAD_PTF15__LPUART7_RX	0x400
-				ULP1_PAD_PTF13__LPUART7_RTS_B	0x400
-				ULP1_PAD_PTF12__LPUART7_CTS_B	0x400
+				ULP1_PAD_PTF14__LPUART7_TX	0x403
+				ULP1_PAD_PTF15__LPUART7_RX	0x403
+				ULP1_PAD_PTF13__LPUART7_RTS_B	0x403
+				ULP1_PAD_PTF12__LPUART7_CTS_B	0x403
 			>;
 		};
 
 		pinctrl_usdhc0: usdhc0grp {
 			fsl,pins = <
 				ULP1_PAD_PTD1__SDHC0_CMD	0x843
-				ULP1_PAD_PTD2__SDHC0_CLK	0x843
+				ULP1_PAD_PTD2__SDHC0_CLK	0x10843
 				ULP1_PAD_PTD7__SDHC0_D3		0x843
 				ULP1_PAD_PTD8__SDHC0_D2		0x843
 				ULP1_PAD_PTD9__SDHC0_D1		0x843
 				ULP1_PAD_PTD10__SDHC0_D0	0x843
+				ULP1_PAD_PTC10__PTC10		0x10100		/* USDHC0 CD */
+				ULP1_PAD_PTD0__PTD0		0x20100		/* USDHC0 RST */
 			>;
 		};
 
@@ -201,15 +259,24 @@
 			>;
 		};
 
+		pinctrl_lpspi3: lpspi3grp {
+			fsl,pins = <
+				ULP1_PAD_PTF16__LPSPI3_SIN      0x300
+				ULP1_PAD_PTF17__LPSPI3_SOUT     0x300
+				ULP1_PAD_PTF18__LPSPI3_SCK      0x300
+				ULP1_PAD_PTF19__LPSPI3_PCS0     0x300
+			>;
+		};
+
 		pinctrl_usb_otg1: usbotg1grp {
 			fsl,pins = <
-				ULP1_PAD_PTC0__PTC0		0x30100
+				ULP1_PAD_PTC0__PTC0		0x20100
 			>;
 		};
 
 		pinctrl_extcon_usb1: extcon1grp {
 			fsl,pins = <
-				ULP1_PAD_PTC8__PTC8		0x30103
+				ULP1_PAD_PTC8__PTC8		0x10103
 			>;
 		};
 
@@ -224,9 +291,18 @@
 			>;
 		};
 
+		pinctrl_usdhc1_rst: usdhc1grp_rst {
+			fsl,pins = <
+				ULP1_PAD_PTE11__PTE11		0x20100		/* USDHC1 RST */
+				ULP1_PAD_PTE13__PTE13		0x10103		/* USDHC1 CD */
+				ULP1_PAD_PTE12__PTE12		0x10103		/* USDHC1 WP */
+				ULP1_PAD_PTE14__SDHC1_VS	0x843		/* USDHC1 VSEL */
+			>;
+		};
+
 		pinctrl_wifi: wifigrp {
 			fsl,pins = <
-				ULP1_PAD_PTE6__PTE6		0x43 /* WL_REG_ON */
+				ULP1_PAD_PTE6__PTE6		0x20043 /* WL_REG_ON */
 			>;
 		};
 	};
@@ -234,6 +310,7 @@
 
 &lcdif {
 	status = "okay";
+	disp-dev = "mipi_dsi_northwest";
 	display = <&display0>;
 
 	display0: display {
@@ -272,8 +349,9 @@
 &lpi2c5 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_lpi2c5>;
+	pinctrl-1 = <&pinctrl_lpi2c5>;
 	status = "okay";
 
 	fxas2100x@20 {
@@ -292,25 +370,59 @@
 	};
 };
 
-&lpuart4 { /* console */
+&lpspi3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&pinctrl_lpspi3>;
+	pinctrl-1 = <&pinctrl_lpspi3>;
+	status = "okay";
+
+	spidev0: spi@0 {
+		reg = <0>;
+		compatible = "rohm,dh2228fv";
+		spi-max-frequency = <1000000>;
+	};
+};
+
+&mipi_dsi {
 	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_mipi_dsi_reset>;
+	lcd_panel = "TRULY-WVGA-TFT3P5581E";
+	resets = <&mipi_dsi_reset>;
+	status = "okay";
+};
+
+&lpuart4 { /* console */
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_lpuart4>;
+	pinctrl-1 = <&pinctrl_lpuart4>;
 	status = "okay";
 };
 
 &lpuart6 { /* BT */
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_lpuart6>;
+	pinctrl-1 = <&pinctrl_lpuart6>;
+	resets = <&modem_reset>;
 	status = "okay";
 };
 
 &lpuart7 { /* Uart test */
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_lpuart7>;
+	pinctrl-1 = <&pinctrl_lpuart7>;
 	status = "disabled";
 };
 
 &rpmsg{
+	/*
+	 * 64K for one rpmsg instance, default using 2 rpmsg instances:
+	 * --0x9FF00000~0x9FF01FFF: pingpong
+	 * --0x9FF10000~0x9FF11FFF: pmic
+	 */
+	vdev-nums = <2>;
+	reg = <0x9FF00000 0x20000>;
 	status = "okay";
 };
 
@@ -324,16 +436,21 @@
 };
 
 &usdhc0 {
-	pinctrl-names = "default", "sleep";
+	pinctrl-names = "default", "state_100mhz", "state_200mhz", "sleep";
 	pinctrl-0 = <&pinctrl_usdhc0>;
 	pinctrl-1 = <&pinctrl_usdhc0>;
-	non-removable;
+	pinctrl-2 = <&pinctrl_usdhc0>;
+	pinctrl-3 = <&pinctrl_usdhc0>;
+	cd-gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+	vmmc-supply = <&reg_vsd_3v3>;
+	vqmmc-supply = <&vldo2_reg>;
 	status = "okay";
 };
 
 &usdhc1 {
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_usdhc1 &pinctrl_wifi>;
+	pinctrl-1 = <&pinctrl_usdhc1 &pinctrl_wifi>;
 	non-removable;
 	keep-power-in-suspend;
 	cd-post;

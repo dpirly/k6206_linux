@@ -14,6 +14,7 @@ extern void imx_cscmr1_fixup(u32 *val);
 extern struct imx_sema4_mutex *amp_power_mutex;
 extern struct imx_shared_mem *shared_mem;
 extern bool uart_from_osc;
+extern const struct clk_ops clk_frac_divider_ops;
 
 struct clk *imx_clk_pllv1(const char *name, const char *parent,
 		void __iomem *base);
@@ -29,6 +30,23 @@ enum imx_pllv3_type {
 	IMX_PLLV3_AV,
 	IMX_PLLV3_ENET,
 	IMX_PLLV3_SYSV2,
+};
+
+/*
+ * frac_divider, found on i.MX7ULP PCC module.
+ * the output clock of the fractional divider is:
+ * Divider output clock = Input clock * (FRAC + 1)
+ * / (DIV + 1)
+ */
+struct clk_frac_divider {
+	struct clk_hw	hw;
+	void __iomem	*reg;
+	u8		mshift;
+	u8		mwidth;
+	u32		mmask;
+	u8		nshift;
+	u8		nwidth;
+	u32		nmask;
 };
 
 #define MAX_SHARED_CLK_NUMBER		100
@@ -52,6 +70,10 @@ struct imx_shared_mem {
 
 struct clk *imx_clk_pllv3(enum imx_pllv3_type type, const char *name,
 		const char *parent_name, void __iomem *base, u32 div_mask);
+
+struct clk *imx_clk_pllv4(const char *name,
+	const char *parent_name, void __iomem *base);
+struct clk *imx_clk_pllv5(const char *name, const char *parent_name, void __iomem *base);
 
 struct clk *clk_register_gate2(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
@@ -285,5 +307,12 @@ static inline struct clk *imx_clk_fixed_factor(const char *name,
 struct clk *imx_clk_cpu(const char *name, const char *parent_name,
 		struct clk *div, struct clk *mux, struct clk *pll,
 		struct clk *step);
+
+struct clk *imx_clk_composite(const char *name, const char **parent_name,
+		int num_parents, bool mux_present, bool rate_present,
+		bool gate_present, void __iomem *reg);
+
+struct clk *imx_clk_pfdv2(const char *name, const char *parent_name,
+		void __iomem *reg, u8 idx);
 
 #endif
