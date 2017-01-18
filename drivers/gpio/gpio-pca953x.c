@@ -673,7 +673,7 @@ static int pca953x_probe(struct i2c_client *client,
 	mutex_init(&chip->i2c_lock);
 
 	ret = device_reset(&client->dev);
-	if (ret == -ENODEV)
+	if (ret == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
 
 	/* initialize cached registers from their original values.
