@@ -7828,9 +7828,10 @@ gckHARDWARE_SetPowerManagement(
     /* Verify the arguments. */
     gcmkVERIFY_OBJECT(Hardware, gcvOBJ_HARDWARE);
 
-#if IMX8_DISABLE_PM
-    PowerManagement = gcvFALSE;
-#endif
+    if(_IsHardwareMatch(Hardware, gcv7000, 0x6008))
+    {
+        PowerManagement = gcvFALSE;
+    }
 
     gcmkVERIFY_OK(
         gckOS_AcquireMutex(Hardware->os, Hardware->powerMutex, gcvINFINITE));
@@ -12191,7 +12192,7 @@ gckHARDWARE_GetBaseAddress(
     gcmkVERIFY_ARGUMENT(BaseAddress != gcvNULL);
 
     /* Test if we have a new Memory Controller. */
-    if (gckHARDWARE_IsFeatureAvailable(Hardware, gcvFEATURE_MC20))
+    if (gckHARDWARE_IsFeatureAvailable(Hardware, gcvFEATURE_MMU))
     {
         /* No base address required. */
         *BaseAddress = 0;

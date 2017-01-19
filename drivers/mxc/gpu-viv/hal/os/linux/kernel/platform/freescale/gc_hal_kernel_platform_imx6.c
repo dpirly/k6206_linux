@@ -426,8 +426,11 @@ gckPLATFORM_AdjustParam(
     const char *iobase_3d_res[2] = {"iobase_3d_0", "iobase_3d_1"};
 
     res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "phys_baseaddr");
-    if (res)
+    if (res && !Args->baseAddress && !Args->physSize)
+    {
         Args->baseAddress = res->start;
+        Args->physSize = res->end - res->start + 1;
+    }
 
     res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, "irq_3d");
     if (res)
@@ -511,22 +514,18 @@ gckPLATFORM_AdjustParam(
 
     Args->gpu3DMinClock = initgpu3DMinClock;
 
-#if IMX8_PHYS_BASE
-    Args->baseAddress = IMX8_PHYS_BASE;
-#endif
-
     if(Args->physSize == 0)
     {
+#if IMX8_PHYS_BASE
+        Args->baseAddress = IMX8_PHYS_BASE;
+#endif
+
 #if IMX8_PHYS_SIZE
         Args->physSize = IMX8_PHYS_SIZE;
 #else
         Args->physSize = 0x80000000;
 #endif
     }
-
-#if IMX8_DISABLE_PM
- Args->powerManagement = 0;
-#endif
 
     return gcvSTATUS_OK;
 }
@@ -1097,14 +1096,6 @@ _GetPower_imx8x(
                 }
                 priv->sc_gpu_pid[j] = sc_gpu_pid[i];
 #endif
-                clk_prepare(priv->clk_core_3d[j]);
-                clk_set_rate(priv->clk_core_3d[j], 800000000);
-                clk_unprepare(priv->clk_core_3d[j]);
-
-                clk_prepare(priv->clk_shader_3d[j]);
-                clk_set_rate(priv->clk_shader_3d[j], 800000000);
-                clk_unprepare(priv->clk_shader_3d[j]);
-
                 j++;
             }
         } else {

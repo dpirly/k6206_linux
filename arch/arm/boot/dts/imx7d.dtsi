@@ -857,6 +857,12 @@
 				status = "disabled";
 			};
 
+			pcie_phy: pcie-phy@306d0000 {
+				compatible = "fsl,imx-pcie-phy";
+				reg = <0x306d0000 0x10000>;
+				status = "disabled";
+			};
+
 			epdc: epdc@306f0000 {
 				compatible = "fsl,imx7d-epdc";
 				interrupts = <GIC_SPI 117 IRQ_TYPE_LEVEL_HIGH>;
@@ -1245,6 +1251,9 @@
 				fsl,usbphy = <&usbphy_nop1>;
 				fsl,usbmisc = <&usbmisc1 0>;
 				phy-clkgate-delay-us = <400>;
+				ahb-burst-config = <0x0>;
+				tx-burst-size-dword = <0x10>;
+				rx-burst-size-dword = <0x10>;
 				status = "disabled";
 			};
 
@@ -1256,6 +1265,9 @@
 				fsl,usbphy = <&usbphy_nop2>;
 				fsl,usbmisc = <&usbmisc2 0>;
 				phy-clkgate-delay-us = <400>;
+				ahb-burst-config = <0x0>;
+				tx-burst-size-dword = <0x10>;
+				rx-burst-size-dword = <0x10>;
 				status = "disabled";
 			};
 
