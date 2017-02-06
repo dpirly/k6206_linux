@@ -221,6 +221,7 @@ static inline void imx7_suspend(void __iomem *ocram_vbase) {}
 static inline void imx7ulp_suspend(void __iomem *ocram_vbase) {}
 void pm_vlls_notify_m4(bool enter) {}
 #endif
+void pm_shutdown_notify_m4(void);
 
 void imx7_pm_init(void);
 void imx7d_pm_init(void);
