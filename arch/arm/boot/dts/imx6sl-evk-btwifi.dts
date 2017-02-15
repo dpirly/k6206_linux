@@ -16,17 +16,6 @@
 #include "imx6sl-evk.dts"
 
 / {
-	regulators {
-		wlreg_on: fixedregulator@100 {
-			compatible = "regulator-fixed";
-			regulator-min-microvolt = <5000000>;
-			regulator-max-microvolt = <5000000>;
-			regulator-name = "wlreg_on";
-			gpio = <&gpio5 16 0>;
-			startup-delay-us = <100>;
-			enable-active-high;
-		};
-	}
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
 		gpios = <&gpio5 20 0>; /* WL_HOST_WAKE */

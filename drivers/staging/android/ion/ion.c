@@ -402,11 +402,6 @@ static int ion_handle_put(struct ion_handle *handle)
 	return ret;
 }
 
-/* for used in mxc_ion.c */
-int ion_handle_put_wrap(struct ion_handle *handle)
-{
-	return ion_handle_put(handle);
-}
 
 static struct ion_handle *ion_handle_lookup(struct ion_client *client,
 					    struct ion_buffer *buffer)
