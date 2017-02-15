@@ -43,6 +43,7 @@ config ION_POOL_CACHE_POLICY
 
 config ION_MXC
 	tristate "Ion for imx platform"
-	depends on ARCH_MXC && ION
+	depends on ION
+	select VIDEOBUF2_DMA_CONTIG
 	help
 	  Choose this option if you wish to use ion on imx platform.

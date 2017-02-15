@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP
  *
  * derived from the omap-rpmsg implementation.
  *

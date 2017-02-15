@@ -683,7 +683,7 @@
 			>;
 		};
 
-        pinctrl_epdc0: epdcgrp0 {
+                pinctrl_epdc0: epdcgrp0 {
                         fsl,pins = <
 				MX7D_PAD_EPDC_DATA00__EPDC_DATA0  0x2
 				MX7D_PAD_EPDC_DATA01__EPDC_DATA1  0x2
@@ -1233,7 +1233,6 @@
 	cd-post;
 	pm-ignore-notify;
 	wifi-host;
-	pm-ignore-notify;
 	status = "okay";
 };
 

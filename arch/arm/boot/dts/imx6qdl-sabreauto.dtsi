@@ -301,18 +301,6 @@
 		status = "okay";
 	};
 
-	v4l2_cap_0 {
-		compatible = "fsl,imx6q-v4l2-capture";
-		ipu_id = <0>;
-		csi_id = <0>;
-		mclk_source = <0>;
-		status = "okay";
-	};
-
-	v4l2_out {
-		compatible = "fsl,mxc_v4l2_output";
-		status = "okay";
-	};
 	ramoops_device {
 		compatible = "fsl,mxc_ramoops";
 		record_size = <524288>; /*512K*/
@@ -334,6 +322,7 @@
 		compatible = "fsl,mxc_v4l2_output";
 		status = "okay";
 	};
+
 };
 
 &audmux {
@@ -365,34 +354,6 @@
 	status = "okay";
 };
 
-&audmux {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_audmux>;
-	status = "okay";
-};
-
-&clks {
-	assigned-clocks = <&clks IMX6QDL_PLL4_BYPASS_SRC>,
-			  <&clks IMX6QDL_PLL4_BYPASS>,
-			  <&clks IMX6QDL_CLK_PLL4_POST_DIV>;
-	assigned-clock-parents = <&clks IMX6QDL_CLK_LVDS2_IN>,
-				<&clks IMX6QDL_PLL4_BYPASS_SRC>;
-	assigned-clock-rates = <0>, <0>, <24576000>;
-	fsl,ldb-di0-parent = <&clks IMX6QDL_CLK_PLL2_PFD0_352M>;
-	fsl,ldb-di1-parent = <&clks IMX6QDL_CLK_PLL2_PFD0_352M>;
-};
-
-&dcic1 {
-	dcic_id = <0>;
-	dcic_mux = "dcic-hdmi";
-	status = "okay";
-};
-
-&dcic2 {
-	dcic_id = <1>;
-	dcic_mux = "dcic-lvds0";
-	status = "okay";
-};
 
 &ecspi1 {
 	fsl,spi-num-chipselects = <1>;

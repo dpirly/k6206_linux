@@ -3351,7 +3351,7 @@ static bool __tcp_oow_rate_limited(struct net *net, int mib_idx,
 		s32 elapsed = (s32)(tcp_time_stamp - *last_oow_ack_time);
 
 		if (0 <= elapsed && elapsed < sysctl_tcp_invalid_ratelimit) {
-			NET_INC_STATS_BH(net, mib_idx);
+			NET_INC_STATS(net, mib_idx);
 			return true;	/* rate-limited: don't send yet! */
 		}
 	}

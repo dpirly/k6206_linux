@@ -2123,6 +2123,8 @@ static int fec_enet_mii_init(struct platform_device *pdev)
 	if (node) {
 		err = of_mdiobus_register(fep->mii_bus, node);
 		of_node_put(node);
+	} else if (fep->phy_node) {
+		err = -EPROBE_DEFER;
 	} else {
 		err = mdiobus_register(fep->mii_bus);
 	}
@@ -3026,6 +3028,7 @@ static void set_multicast_list(struct net_device *ndev)
 	struct netdev_hw_addr *ha;
 	unsigned int i, bit, data, crc, tmp;
 	unsigned char hash;
+	unsigned int hash_high, hash_low;
 
 	if (ndev->flags & IFF_PROMISC) {
 		tmp = readl(fep->hwp + FEC_R_CNTRL);
@@ -3048,10 +3051,10 @@ static void set_multicast_list(struct net_device *ndev)
 		return;
 	}
 
-	/* Clear filter and add the addresses in hash register
+	/* Add the addresses in hash register
 	 */
-	writel(0, fep->hwp + FEC_GRP_HASH_TABLE_HIGH);
-	writel(0, fep->hwp + FEC_GRP_HASH_TABLE_LOW);
+	hash_high = 0;
+	hash_low = 0;
 
 	netdev_for_each_mc_addr(ha, ndev) {
 		/* calculate crc32 value of mac address */
@@ -3071,15 +3074,14 @@ static void set_multicast_list(struct net_device *ndev)
 		hash = (crc >> (32 - HASH_BITS)) & 0x3f;
 
 		if (hash > 31) {
-			tmp = readl(fep->hwp + FEC_GRP_HASH_TABLE_HIGH);
-			tmp |= 1 << (hash - 32);
-			writel(tmp, fep->hwp + FEC_GRP_HASH_TABLE_HIGH);
+			hash_high |= 1 << (hash - 32);
 		} else {
-			tmp = readl(fep->hwp + FEC_GRP_HASH_TABLE_LOW);
-			tmp |= 1 << hash;
-			writel(tmp, fep->hwp + FEC_GRP_HASH_TABLE_LOW);
+			hash_low |= 1 << hash;
 		}
 	}
+
+	writel_relaxed(hash_high, fep->hwp + FEC_GRP_HASH_TABLE_HIGH);
+	writel_relaxed(hash_low, fep->hwp + FEC_GRP_HASH_TABLE_LOW);
 }
 
 /* Set a MAC change in hardware. */
@@ -3610,8 +3612,10 @@ fec_probe(struct platform_device *pdev)
 
 	init_completion(&fep->mdio_done);
 	ret = fec_enet_mii_init(pdev);
-	if (ret)
+	if (ret) {
+		dev_id = 0;
 		goto failed_mii_init;
+	}
 
 	/* Carrier starts down, phylib will bring it up */
 	netif_carrier_off(ndev);

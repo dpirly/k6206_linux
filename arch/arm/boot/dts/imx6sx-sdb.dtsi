@@ -251,6 +251,7 @@
 	};
 };
 
+
 &adc1 {
 	vref-supply = <&reg_vref_3v3>;
 	status = "okay";
@@ -653,6 +654,9 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_uart1>;
 	status = "okay";
+	/* for DTE mode, add below change */
+	/* fsl,dte-mode;*/
+	/* pinctrl-0 = <&pinctrl_uart5dte_1>; */
 };
 
 &usbotg1 {

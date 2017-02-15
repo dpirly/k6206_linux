@@ -1,5 +1,6 @@
 /*
  * Copyright 2004-2016 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright 2017 NXP
  */
 
 /*
@@ -181,8 +182,10 @@ void imx6_enet_mac_init(const char *enet_compat, const char *ocotp_compat);
 int imx7ulp_set_lpm(enum imx7ulp_cpu_pwr_mode mode);
 #ifdef CONFIG_HAVE_IMX_MMDC
 int imx_mmdc_get_ddr_type(void);
+int imx_mmdc_get_lpddr2_2ch_mode(void);
 #else
 static inline int imx_mmdc_get_ddr_type(void) { return 0; }
+static inline int imx_mmdc_get_lpddr2_2ch_mode(void) { return 0; }
 #endif
 #ifdef CONFIG_HAVE_IMX_DDRC
 int imx_ddrc_get_ddr_type(void);
@@ -208,6 +211,7 @@ void imx7ulp_cpu_resume(void);
 void imx6_suspend(void __iomem *ocram_vbase);
 void imx7_suspend(void __iomem *ocram_vbase);
 void imx7ulp_suspend(void __iomem *ocram_vbase);
+void pm_vlls_notify_m4(bool enter);
 #else
 static inline void v7_cpu_resume(void) {}
 static inline void ca7_cpu_resume(void) {}
@@ -215,7 +219,9 @@ static inline void imx7ulp_cpu_resume(void) {}
 static inline void imx6_suspend(void __iomem *ocram_vbase) {}
 static inline void imx7_suspend(void __iomem *ocram_vbase) {}
 static inline void imx7ulp_suspend(void __iomem *ocram_vbase) {}
+void pm_vlls_notify_m4(bool enter) {}
 #endif
+void pm_shutdown_notify_m4(void);
 
 void imx7_pm_init(void);
 void imx7d_pm_init(void);

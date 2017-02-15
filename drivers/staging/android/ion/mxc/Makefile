@@ -1,2 +1,2 @@
-EXTRA_CFLAGS += -I../
+ccflags-y += -I../
 obj-y += mxc_ion.o

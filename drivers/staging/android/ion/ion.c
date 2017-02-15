@@ -253,8 +253,10 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	   allocation via dma_map_sg. The implicit contract here is that
 	   memory coming from the heaps is ready for dma, ie if it has a
 	   cached mapping that mapping has been invalidated */
-	for_each_sg(buffer->sg_table->sgl, sg, buffer->sg_table->nents, i)
+	for_each_sg(buffer->sg_table->sgl, sg, buffer->sg_table->nents, i) {
 		sg_dma_address(sg) = sg_phys(sg);
+		sg_dma_len(sg) = sg->length;
+	}
 	mutex_lock(&dev->buffer_lock);
 	ion_buffer_add(dev, buffer);
 	mutex_unlock(&dev->buffer_lock);
@@ -436,6 +438,26 @@ struct ion_handle *ion_handle_get_by_id(struct ion_client *client,
 	mutex_unlock(&client->lock);
 
 	return handle ? handle : ERR_PTR(-EINVAL);
+}
+
+/* for used in mxc_ion.c */
+int ion_handle_put_wrap(struct ion_handle *handle)
+{
+	return ion_handle_put(handle);
+}
+
+struct ion_handle *ion_handle_get_by_id_wrap(struct ion_client *client,
+						int id)
+{
+	return ion_handle_get_by_id(client, id);
+}
+
+struct device *ion_device_get_by_client(struct ion_client *client)
+{
+	if (client)
+		return client->dev->dev.this_device;
+	else
+		return NULL;
 }
 
 static bool ion_handle_validate(struct ion_client *client,

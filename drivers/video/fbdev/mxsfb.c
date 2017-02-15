@@ -5,6 +5,7 @@
  * Author: Vitaly Wool <vital@embeddedalley.com>
  *
  * Copyright 2008-2016 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright 2017 NXP
  * Copyright 2008 Embedded Alley Solutions, Inc All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -635,6 +636,15 @@ static int mxsfb_check_var(struct fb_var_screeninfo *var,
 			/* real 24 bit */
 			rgb = def_rgb888;
 			break;
+		default:
+			/*
+			 * 32-bit output is possible through I/O muxing, if this
+			 * option is available on chip. Currently not
+			 * implemented.
+			 */
+			pr_debug("Currently unsupported output colour depth: %u\n",
+				 host->ld_intf_width);
+			return -EINVAL;
 		}
 		break;
 	default:
@@ -1816,6 +1826,14 @@ static int overlayfb_check_var(struct fb_var_screeninfo *var,
 		case V4L2_PIX_FMT_RGB565:
 			rgb = def_rgb565;
 			break;
+		default:
+			/*
+			 * This should never be reached since the verification
+			 * is done in overlay_fmt_support(), but handle this in
+			 * case there will be a sync error between formats
+			 * supported in fmt_support and this function.
+			 */
+			 return -EINVAL;
 		}
 		break;
 	}

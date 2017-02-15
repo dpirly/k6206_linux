@@ -440,7 +440,7 @@ static struct attribute *mag3110_attributes[] = {
 };
 
 static const struct attribute_group mag3110_attr_group = {
-	.attrs	= mag3110_attributes,
+	.attrs = mag3110_attributes,
 };
 
 static int mag3110_probe(struct i2c_client *client,
