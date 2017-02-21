@@ -1196,14 +1196,17 @@ static int lpuart_startup(struct uart_port *port)
 static int lpuart32_startup(struct uart_port *port)
 {
 	struct lpuart_port *sport = container_of(port, struct lpuart_port, port);
+	struct tty_port *tty_port = &sport->port.state->port;
 	int ret;
 	unsigned long flags;
 	unsigned long temp;
 
 	/* some modem may need reset */
-	ret = device_reset(sport->port.dev);
-	if (ret && ret != -ENOENT)
-		return ret;
+	if (!(tty_port->flags & ASYNC_SUSPENDED)) {
+		ret = device_reset(sport->port.dev);
+		if (ret && ret != -ENOENT)
+			return ret;
+	}
 
 	ret = clk_prepare_enable(sport->clk);
 	if (ret)
