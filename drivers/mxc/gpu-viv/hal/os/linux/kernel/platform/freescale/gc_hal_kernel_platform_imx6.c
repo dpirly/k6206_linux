@@ -364,16 +364,6 @@ static const struct of_device_id mxs_gpu_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, mxs_gpu_dt_ids);
 #endif
 
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
-struct contiguous_mem_pool {
-    struct dma_attrs attrs;
-    dma_addr_t phys;
-    void *virt;
-    size_t size;
-};
-#endif
-
 struct imx_priv {
     /* Clock management.*/
     struct clk         *clk_3d_core;
@@ -399,7 +389,6 @@ struct imx_priv {
        /*Run time pm*/
        struct device           *pmdev;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
-    struct contiguous_mem_pool *pool;
     struct reset_control *rstc[gcdMAX_GPU_COUNT];
 #endif
 };
@@ -617,9 +606,15 @@ _GetPower(
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
     rstc = devm_reset_control_get(pdev, "gpu3d");
     priv->rstc[gcvCORE_MAJOR] = IS_ERR(rstc) ? NULL : rstc;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	rstc = devm_reset_control_get_shared(pdev, "gpu2d");
+    priv->rstc[gcvCORE_2D] = IS_ERR(rstc) ? NULL : rstc;
+    rstc = devm_reset_control_get_shared(pdev, "gpuvg");
+#else
     rstc = devm_reset_control_get(pdev, "gpu2d");
     priv->rstc[gcvCORE_2D] = IS_ERR(rstc) ? NULL : rstc;
     rstc = devm_reset_control_get(pdev, "gpuvg");
+#endif
     priv->rstc[gcvCORE_VG] = IS_ERR(rstc) ? NULL : rstc;
 #endif
 #endif

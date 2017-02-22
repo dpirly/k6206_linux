@@ -388,7 +388,7 @@ static void imx7ulp_set_dgo(u32 val)
 
 int imx7ulp_set_lpm(enum imx7ulp_cpu_pwr_mode mode)
 {
-	u32 val1 = BM_PMPROT_AVLP | BM_PMPROT_AVLLS;
+	u32 val1 = BM_PMPROT_AHSRUN | BM_PMPROT_AVLP | BM_PMPROT_AVLLS;
 	u32 val2 = readl_relaxed(smc1_base + PMCTRL);
 	u32 val3 = readl_relaxed(pmc0_base + PMC_CTRL);
 
@@ -451,7 +451,6 @@ static int imx7ulp_pm_enter(suspend_state_t state)
 		imx7ulp_set_lpm(RUN);
 		break;
 	case PM_SUSPEND_MEM:
-		pm_vlls_notify_m4(true);
 		imx7ulp_gpio_save();
 		imx7ulp_scg1_save();
 		imx7ulp_pcc2_save();
@@ -472,7 +471,6 @@ static int imx7ulp_pm_enter(suspend_state_t state)
 		imx7ulp_tpm_restore();
 		imx7ulp_iomuxc_restore();
 		imx7ulp_set_lpm(RUN);
-		pm_vlls_notify_m4(false);
 		break;
 	default:
 		return -EINVAL;

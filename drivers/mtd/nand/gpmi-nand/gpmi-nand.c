@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2010-2016 Freescale Semiconductor, Inc.
  * Copyright (C) 2008 Embedded Alley Solutions, Inc.
+ * Copyright 2017 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2312,11 +2313,12 @@ static int gpmi_nand_init(struct gpmi_nand_data *this)
 	/* Set up swap_block_mark, must be set before the gpmi_set_geometry() */
 	this->swap_block_mark = !GPMI_IS_MX23(this);
 
-	if (of_get_nand_on_flash_bbt(this->dev->of_node)) {
-		chip->bbt_options |= NAND_BBT_USE_FLASH | NAND_BBT_NO_OOB;
 	if (of_property_read_bool(this->dev->of_node,
 				"fsl,legacy-bch-geometry"))
 		this->legacy_bch_geometry = true;
+
+	if (of_get_nand_on_flash_bbt(this->dev->of_node)) {
+		chip->bbt_options |= NAND_BBT_USE_FLASH | NAND_BBT_NO_OOB;
 
 		if (of_property_read_bool(this->dev->of_node,
 						"fsl,no-blockmark-swap"))

@@ -175,6 +175,14 @@ _Import(
         /* Get the user pages. */
         down_read(&current->mm->mmap_sem);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+        result = get_user_pages(memory & PAGE_MASK,
+                pageCount,
+                FOLL_WRITE,
+                pages,
+                gcvNULL
+                );
+#else
         result = get_user_pages(current,
                 current->mm,
                 memory & PAGE_MASK,
@@ -184,6 +192,7 @@ _Import(
                 pages,
                 gcvNULL
                 );
+#endif
 
         up_read(&current->mm->mmap_sem);
 
@@ -201,7 +210,7 @@ _Import(
                         break;
                     }
 
-                    page_cache_release(pages[i]);
+                    put_page(pages[i]);
                     pages[i] = gcvNULL;
                 }
 
@@ -362,7 +371,7 @@ OnError:
                 break;
             }
 
-            page_cache_release(pages[i]);
+            put_page(pages[i]);
         }
     }
 
@@ -435,7 +444,7 @@ _Free(
 
                 if (pfn_valid(page_to_pfn(pages[i])) && ref[i])
                 {
-                    page_cache_release(pages[i]);
+                    put_page(pages[i]);
                 }
             }
         }
