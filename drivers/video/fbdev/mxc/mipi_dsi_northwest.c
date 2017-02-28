@@ -428,6 +428,20 @@ static int mipi_display_exit_sleep(struct mxc_dispdrv_handle *disp)
 	return err;
 }
 
+static void reset_dsi_domains(struct mipi_dsi_info *mipi_dsi, bool reset)
+{
+	/* escape domain */
+	regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
+			DSI_RST_ESC_N, (reset ? 0 : DSI_RST_ESC_N));
+	/* byte domain */
+	regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
+			DSI_RST_BYTE_N, (reset ? 0 : DSI_RST_BYTE_N));
+
+	/* dpi domain */
+	regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
+			DSI_RST_DPI_N, (reset ? 0 : DSI_RST_DPI_N));
+}
+
 static int mipi_dsi_enable(struct mxc_dispdrv_handle *disp,
 			   struct fb_info *fbi)
 {
@@ -460,16 +474,7 @@ static int mipi_dsi_enable(struct mxc_dispdrv_handle *disp,
 
 		mipi_dsi_dpi_init(mipi_dsi);
 
-		/* escape domain */
-		regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
-				DSI_RST_ESC_N, DSI_RST_ESC_N);
-		/* byte domain */
-		regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
-				DSI_RST_BYTE_N, DSI_RST_BYTE_N);
-
-		/* dpi domain */
-		regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
-				DSI_RST_DPI_N, DSI_RST_DPI_N);
+		reset_dsi_domains(mipi_dsi, 0);
 
 		/* display_en */
 		regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
@@ -505,6 +510,8 @@ static int mipi_dsi_enable(struct mxc_dispdrv_handle *disp,
 				"clk enable error: %d!\n", ret);
 			return -EINVAL;
 		}
+
+		reset_dsi_domains(mipi_dsi, 0);
 
 		ret = mipi_display_exit_sleep(mipi_dsi->disp_mipi);
 		if (ret) {
@@ -697,6 +704,10 @@ static void mipi_dsi_disable(struct mxc_dispdrv_handle *disp,
 	}
 
 	clk_disable_unprepare(mipi_dsi->esc_clk);
+
+	reset_dsi_domains(mipi_dsi, 1);
+	regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
+			   DSI_PLL_EN, 0x0);
 }
 
 static int mipi_dsi_setup(struct mxc_dispdrv_handle *disp,
@@ -870,14 +881,21 @@ static void mipi_dsi_shutdown(struct platform_device *pdev)
 {
 	struct mipi_dsi_info *mipi_dsi = dev_get_drvdata(&pdev->dev);
 
-	mipi_display_enter_sleep(mipi_dsi->disp_mipi);
+	if (mipi_dsi->lcd_inited) {
+		clk_prepare_enable(mipi_dsi->esc_clk);
+		mipi_display_enter_sleep(mipi_dsi->disp_mipi);
 
-	writel(0x1, mipi_dsi->mmio_base + DPHY_PD_PLL);
-	writel(0x1, mipi_dsi->mmio_base + DPHY_PD_DPHY);
+		writel(0x1, mipi_dsi->mmio_base + DPHY_PD_PLL);
+		writel(0x1, mipi_dsi->mmio_base + DPHY_PD_DPHY);
 
-	clk_disable_unprepare(mipi_dsi->esc_clk);
+		clk_disable_unprepare(mipi_dsi->esc_clk);
 
-	mipi_dsi->lcd_inited = 0;
+		mipi_dsi->lcd_inited = 0;
+	}
+
+	reset_dsi_domains(mipi_dsi, 1);
+	regmap_update_bits(mipi_dsi->regmap, SIM_SOPT1CFG,
+			   DSI_PLL_EN, 0x0);
 }
 
 static const struct of_device_id imx_mipi_dsi_dt_ids[] = {

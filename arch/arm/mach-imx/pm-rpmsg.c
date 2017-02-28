@@ -34,6 +34,7 @@
 enum pm_rpmsg_cmd {
 	PM_RPMSG_MODE,
 	PM_RPMSG_HEART_BEAT,
+	PM_RPMSG_HEART_BEAT_OFF,
 };
 
 enum pm_rpmsg_power_mode {
@@ -54,11 +55,15 @@ struct pm_rpmsg_info {
 	struct pm_qos_request pm_qos_req;
 	struct notifier_block restart_handler;
 	struct completion cmd_complete;
+	bool first_flag;
+	struct mutex lock;
 };
 
 static struct pm_rpmsg_info pm_rpmsg;
 
 static struct delayed_work heart_beat_work;
+
+static bool heartbeat_off;
 
 struct pm_rpmsg_data {
 	struct imx_rpmsg_head header;
@@ -75,6 +80,8 @@ static int pm_send_message(struct pm_rpmsg_data *msg,
 			"rpmsg channel not ready, m4 image ready?\n");
 		return -EINVAL;
 	}
+
+	mutex_lock(&info->lock);
 	pm_qos_add_request(&info->pm_qos_req,
 			PM_QOS_CPU_DMA_LATENCY, 0);
 
@@ -83,11 +90,9 @@ static int pm_send_message(struct pm_rpmsg_data *msg,
 	err = rpmsg_send(info->rpdev, (void *)msg,
 			    sizeof(struct pm_rpmsg_data));
 
-	pm_qos_remove_request(&info->pm_qos_req);
-
 	if (err) {
 		dev_err(&info->rpdev->dev, "rpmsg_send failed: %d\n", err);
-		return err;
+		goto err_out;
 	}
 
 	if (ack) {
@@ -95,17 +100,23 @@ static int pm_send_message(struct pm_rpmsg_data *msg,
 					msecs_to_jiffies(RPMSG_TIMEOUT));
 		if (!err) {
 			dev_err(&info->rpdev->dev, "rpmsg_send timeout!\n");
-			return -ETIMEDOUT;
+			err = -ETIMEDOUT;
+			goto err_out;
 		}
 
 		if (info->msg->data != 0) {
 			dev_err(&info->rpdev->dev, "rpmsg not ack %d!\n",
 				info->msg->data);
-			return -EINVAL;
+			err = -EINVAL;
+			goto err_out;
 		}
 
 		err = 0;
 	}
+
+err_out:
+	pm_qos_remove_request(&info->pm_qos_req);
+	mutex_unlock(&info->lock);
 
 	return err;
 }
@@ -154,20 +165,45 @@ void pm_reboot_notify_m4(void)
 
 }
 
-static void pm_heart_beat_work_handler(struct work_struct *work)
+void  pm_heartbeat_off_notify_m4(bool enter)
 {
 	struct pm_rpmsg_data msg;
 
 	msg.header.cate = IMX_RMPSG_LIFECYCLE;
 	msg.header.major = IMX_RMPSG_MAJOR;
 	msg.header.minor = IMX_RMPSG_MINOR;
-	msg.header.type = HEATBEAT_RPMSG_TYPE;
-	msg.header.cmd = PM_RPMSG_HEART_BEAT;
-	msg.data = 0;
-	pm_send_message(&msg, &pm_rpmsg, false);
+	msg.header.type = PM_RPMSG_TYPE;
+	msg.header.cmd = PM_RPMSG_HEART_BEAT_OFF;
+	msg.data = enter ? 0 : 1;
 
-	schedule_delayed_work(&heart_beat_work,
-		msecs_to_jiffies(30000));
+	pm_send_message(&msg, &pm_rpmsg, true);
+}
+
+static void pm_heart_beat_work_handler(struct work_struct *work)
+{
+	struct pm_rpmsg_data msg;
+
+	/* Notify M4 side A7 in RUN mode at boot time */
+	if (pm_rpmsg.first_flag) {
+		pm_vlls_notify_m4(false);
+
+		pm_heartbeat_off_notify_m4(heartbeat_off);
+
+		pm_rpmsg.first_flag = false;
+	}
+
+	if (!heartbeat_off) {
+		msg.header.cate = IMX_RMPSG_LIFECYCLE;
+		msg.header.major = IMX_RMPSG_MAJOR;
+		msg.header.minor = IMX_RMPSG_MINOR;
+		msg.header.type = HEATBEAT_RPMSG_TYPE;
+		msg.header.cmd = PM_RPMSG_HEART_BEAT;
+		msg.data = 0;
+		pm_send_message(&msg, &pm_rpmsg, false);
+
+		schedule_delayed_work(&heart_beat_work,
+			msecs_to_jiffies(30000));
+	}
 }
 
 static int pm_restart_handler(struct notifier_block *this, unsigned long mode,
@@ -188,14 +224,14 @@ static int pm_rpmsg_probe(struct rpmsg_channel *rpdev)
 			rpdev->src, rpdev->dst);
 
 	init_completion(&pm_rpmsg.cmd_complete);
+	mutex_init(&pm_rpmsg.lock);
 
 	INIT_DELAYED_WORK(&heart_beat_work,
 		pm_heart_beat_work_handler);
 
+	pm_rpmsg.first_flag = true;
 	schedule_delayed_work(&heart_beat_work,
-		msecs_to_jiffies(10000));
-
-	pm_vlls_notify_m4(false);
+			msecs_to_jiffies(100));
 
 	pm_rpmsg.restart_handler.notifier_call = pm_restart_handler;
 	pm_rpmsg.restart_handler.priority = 128;
@@ -240,12 +276,29 @@ static struct rpmsg_driver pm_rpmsg_driver = {
 #ifdef CONFIG_PM_SLEEP
 static int pm_heartbeat_suspend(struct device *dev)
 {
-	return pm_vlls_notify_m4(true);
+	int err;
+
+	err = pm_vlls_notify_m4(true);
+	if (err)
+		return err;
+
+	cancel_delayed_work_sync(&heart_beat_work);
+
+	return 0;
 }
 
 static int pm_heartbeat_resume(struct device *dev)
 {
-	return pm_vlls_notify_m4(false);
+	int err;
+
+	err = pm_vlls_notify_m4(true);
+	if (err)
+		return err;
+
+	schedule_delayed_work(&heart_beat_work,
+			msecs_to_jiffies(10000));
+
+	return 0;
 }
 #endif
 
@@ -274,6 +327,14 @@ static struct platform_driver pm_heartbeat_driver = {
 		},
 	.probe = pm_heartbeat_probe,
 };
+
+static int __init setup_heartbeat(char *str)
+{
+	heartbeat_off = true;
+
+	return 1;
+};
+__setup("heartbeat_off", setup_heartbeat);
 
 module_platform_driver(pm_heartbeat_driver);
 
