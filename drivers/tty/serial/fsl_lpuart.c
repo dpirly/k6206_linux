@@ -198,6 +198,7 @@
 #define UARTDATA_FRETSC		0x00002000
 #define UARTDATA_RXEMPT		0x00001000
 #define UARTDATA_IDLINE		0x00000800
+#define UARTDATA_INVALID	0x0000F000
 #define UARTDATA_MASK		0x3ff
 
 #define UARTMODIR_IREN		0x00020000
@@ -779,7 +780,6 @@ static irqreturn_t lpuart32_rxint(int irq, void *dev_id)
 				continue;
 		}
 
-		rx &= UARTDATA_MASK;
 		if (uart_handle_sysrq_char(&sport->port, (unsigned char)rx))
 			continue;
 
@@ -813,6 +813,10 @@ static irqreturn_t lpuart32_rxint(int irq, void *dev_id)
 #endif
 		}
 
+		if (rx & UARTDATA_INVALID)
+			continue;
+
+		rx &= UARTDATA_MASK;
 		tty_insert_flip_char(port, rx, flg);
 	}
 
@@ -856,7 +860,8 @@ static irqreturn_t lpuart32_int(int irq, void *dev_id)
 		return IRQ_NONE;
 
 	if (!(crdma & UARTBAUD_RDMAE) && rxcount > 0) {
-		if (!sport->lpuart_dma_rx_use)
+		if (!sport->lpuart_dma_rx_use ||
+			(sts & (UARTSTAT_PE | UARTSTAT_NF | UARTSTAT_FE)))
 			lpuart32_rxint(irq, dev_id);
 		else
 			lpuart_prepare_rx(sport);
