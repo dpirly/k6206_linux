@@ -1,0 +1,6 @@
+config MXC_REARVIEW_CAMERA
+	depends on FB_MXC
+	depends on VIDEO_MXC_CAPTURE && VIDEO_V4L2
+	tristate "mxc rearview camera support"
+    ---help---
+      If you plan to use the Rearview Camera with your MXC system, say Y here.
