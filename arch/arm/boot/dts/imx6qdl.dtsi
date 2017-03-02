@@ -1276,5 +1276,16 @@
 			compatible = "fsl,mxc-ion";
 			fsl,heap-id = <0>;
 		};
+
+        rearview {
+            compatible = "fsl,rearview";
+            on = <1>;
+            fps = <30>;
+            width = <1280>;
+            height = <720>;
+            camera_subdev = <0>;
+            overlay_subdev = <1>;
+            input_subdev = <70>;
+        };
 	};
 };
