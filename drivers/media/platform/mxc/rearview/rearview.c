@@ -32,6 +32,7 @@
 #include <linux/kthread.h>
 #include <media/v4l2-dev.h>
 #include <media/videobuf-core.h>
+#include <linux/mxcfb.h>
 #include <linux/export.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
@@ -347,6 +348,7 @@ int overlay_start(struct rear_context* context)
     struct rear_fb* overlay = &context->overlay;
     struct fb_fix_screeninfo fb_fix;
     struct fb_var_screeninfo fb_var;
+    struct mxcfb_gbl_alpha gbl;
     int blank;
 
     err = overlay->fops->unlocked_ioctl(&overlay->file, FBIOGET_VSCREENINFO, (unsigned long)&fb_var);
@@ -390,6 +392,14 @@ int overlay_start(struct rear_context* context)
 
     for (i = 0; i < MAX_BUFFERS; i++) {
         context->buffers[i].phys = fb_fix.smem_start + i * fb_fix.line_length * fb_var.yres;
+    }
+
+    gbl.enable = 1;
+    gbl.alpha = 0xF0;
+    err = overlay->fops->unlocked_ioctl(&overlay->file, MXCFB_SET_GBL_ALPHA, (unsigned long)&gbl);
+    if(err < 0) {
+        printk("overlay: MXCFB_SET_GBL_ALPHA failed\n");
+        return err;
     }
 
     blank = FB_BLANK_UNBLANK;
@@ -801,7 +811,6 @@ static int __init rearview_dev_probe(struct platform_device *pdev)
     }
 
     // set initial value.
-    if (!on) on = 1;
     if (!fps) fps = 30;
     if (!width) width = 1280;
     if (!height) height = 720;
@@ -820,7 +829,7 @@ static int __init rearview_dev_probe(struct platform_device *pdev)
     context->width = width;
     context->height = height;
 
-    context->state = REAL_STATE_START;
+    context->state = REAL_STATE_IDLE;
     rear_create_context(context);
 
     printk("rearview: init success.\n");

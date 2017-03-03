@@ -1279,7 +1279,7 @@
 
         rearview {
             compatible = "fsl,rearview";
-            on = <1>;
+            on = <0>;
             fps = <30>;
             width = <1280>;
             height = <720>;
