@@ -34,8 +34,9 @@
 
 	backlight {
 		compatible = "gpio-backlight";
-		pinctrl-names = "default";
+		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pinctrl_backlight>;
+		pinctrl-1 = <&pinctrl_backlight>;
 		gpios = <&gpio3 2 GPIO_ACTIVE_HIGH>;
 		default-on;
 		status = "okay";
