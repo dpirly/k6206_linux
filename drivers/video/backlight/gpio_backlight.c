@@ -150,11 +150,15 @@ static struct of_device_id gpio_backlight_of_match[] = {
 
 static int gpio_backlight_suspend(struct device *dev)
 {
+	pinctrl_pm_select_sleep_state(dev);
+
 	return 0;
 }
 
 static int gpio_backlight_resume(struct device *dev)
 {
+	pinctrl_pm_select_default_state(dev);
+
 	return 0;
 }
 
