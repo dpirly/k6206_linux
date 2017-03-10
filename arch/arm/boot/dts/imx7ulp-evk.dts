@@ -32,7 +32,7 @@
 		reg = <0x60000000 0x40000000>;
 	};
 
-	backlight {
+	pwm-backlight {
 		compatible = "gpio-backlight";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_backlight>;
