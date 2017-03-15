@@ -34,8 +34,9 @@
 
 	pwm-backlight {
 		compatible = "gpio-backlight";
-		pinctrl-names = "default";
+		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pinctrl_backlight>;
+		pinctrl-1 = <&pinctrl_backlight>;
 		gpios = <&gpio3 2 GPIO_ACTIVE_HIGH>;
 		default-on;
 		status = "okay";
@@ -394,8 +395,9 @@
 };
 
 &mipi_dsi {
-	pinctrl-names = "default";
+	pinctrl-names = "default", "sleep";
 	pinctrl-0 = <&pinctrl_mipi_dsi_reset>;
+	pinctrl-1 = <&pinctrl_mipi_dsi_reset>;
 	lcd_panel = "TRULY-WVGA-TFT3P5581E";
 	resets = <&mipi_dsi_reset>;
 	status = "okay";

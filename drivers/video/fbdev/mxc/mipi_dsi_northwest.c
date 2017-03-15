@@ -145,6 +145,8 @@ static int mipi_dsi_lcd_init(struct mipi_dsi_info *mipi_dsi,
 		return err;
 	}
 
+	setting->fbi->mode = mipi_dsi->mode;
+
 	return 0;
 }
 
@@ -929,7 +931,23 @@ static int mipi_dsi_runtime_resume(struct device *dev)
 	return 0;
 }
 
+static int mipi_dsi_suspend(struct device *dev)
+{
+	pinctrl_pm_select_sleep_state(dev);
+
+	return 0;
+}
+
+static int mipi_dsi_resume(struct device *dev)
+{
+	pinctrl_pm_select_default_state(dev);
+
+	return 0;
+}
+
 static const struct dev_pm_ops mipi_dsi_pm_ops = {
+	.suspend = mipi_dsi_suspend,
+	.resume  = mipi_dsi_resume,
 	.runtime_suspend = mipi_dsi_runtime_suspend,
 	.runtime_resume  = mipi_dsi_runtime_resume,
 	.runtime_idle	 = NULL,
