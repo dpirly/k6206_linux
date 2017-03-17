@@ -2934,9 +2934,11 @@ fec_enet_open(struct net_device *ndev)
 	int ret;
 
 	pinctrl_pm_select_default_state(&fep->pdev->dev);
-	ret = fec_enet_clk_enable(ndev, true);
-	if (ret)
-		return ret;
+	if (!(fep->mii_bus_share && fep->mii_bus_active)) {
+		ret = fec_enet_clk_enable(ndev, true);
+		if (ret)
+			return ret;
+	}
 
 	/* I should reset the ring buffers here, but I don't yet know
 	 * a simple way to do that.
@@ -2972,6 +2974,7 @@ fec_enet_open(struct net_device *ndev)
 	device_set_wakeup_enable(&ndev->dev, fep->wol_flag &
 				 FEC_WOL_FLAG_ENABLE);
 	fep->miibus_up_failed = false;
+	fep->mii_bus_active = true;;
 
 	return 0;
 
@@ -3000,7 +3003,10 @@ fec_enet_close(struct net_device *ndev)
 	phy_disconnect(fep->phy_dev);
 	fep->phy_dev = NULL;
 
-	fec_enet_clk_enable(ndev, false);
+	if (!fep->mii_bus_share) {
+		fec_enet_clk_enable(ndev, false);
+		fep->mii_bus_active = false;
+	}
 	pm_qos_remove_request(&fep->pm_qos_req);
 	pinctrl_pm_select_sleep_state(&fep->pdev->dev);
 	pm_runtime_put_sync_suspend(ndev->dev.parent);
