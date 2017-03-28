@@ -48,7 +48,7 @@
 		wlreg_on-supply = <&wlreg_on>;
 	};
 
-	pwm-backlight {
+	backlight {
 		compatible = "pwm-backlight";
 		pwms = <&pwm1 0 5000000>;
 		brightness-levels = <

@@ -14,7 +14,7 @@
 	model = "Freescale i.MX6 SoloX Sabre Auto Board";
 	compatible = "fsl,imx6sx-sabreauto", "fsl,imx6sx";
 
-	pwm-backlight {
+	backlight {
 		compatible = "pwm-backlight";
 		pwms = <&pwm4 0 50000>;
 		brightness-levels = <

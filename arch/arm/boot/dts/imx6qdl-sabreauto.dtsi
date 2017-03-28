@@ -281,7 +281,7 @@
 		spdif-in;
 	};
 
-	pwm-backlight {
+	backlight {
 		compatible = "pwm-backlight";
 		pwms = <&pwm3 0 50000>;
 		brightness-levels = <
