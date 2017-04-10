@@ -426,14 +426,6 @@ static int imx6_pcie_deassert_core_reset(struct pcie_port *pp)
 	/* allow the clocks to stabilize */
 	udelay(200);
 
-	/* Some boards don't have PCIe reset GPIO. */
-	if (gpio_is_valid(imx6_pcie->reset_gpio)) {
-		gpio_set_value_cansleep(imx6_pcie->reset_gpio, 0);
-		mdelay(20);
-		gpio_set_value_cansleep(imx6_pcie->reset_gpio, 1);
-		mdelay(20);
-	}
-
 	/*
 	 * Release the PCIe PHY reset here
 	 */
@@ -493,6 +485,14 @@ static int imx6_pcie_deassert_core_reset(struct pcie_port *pp)
 		val |=  0x4;
 		pcie_phy_write(pp->dbi_base, SSP_CR_SUP_DIG_ATEOVRD, val);
 		mdelay(4);
+	}
+
+	/* Some boards don't have PCIe reset GPIO. */
+	if (gpio_is_valid(imx6_pcie->reset_gpio)) {
+		gpio_set_value_cansleep(imx6_pcie->reset_gpio, 0);
+		mdelay(20);
+		gpio_set_value_cansleep(imx6_pcie->reset_gpio, 1);
+		mdelay(20);
 	}
 
 	return 0;
