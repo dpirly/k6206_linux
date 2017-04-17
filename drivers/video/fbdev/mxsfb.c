@@ -1710,8 +1710,6 @@ static int overlayfb_open(struct fb_info *info, int user)
 	struct mxsfb_info  *fbi = ofb->fbi;
 
 	if (atomic_inc_return(&ofb->usage) == 1) {
-		memset((void*)&info->var, 0x0, sizeof(info->var));
-
 		ofb->ol_fb->var.xres		= fbi->fb_info->var.xres;
 		ofb->ol_fb->var.yres		= fbi->fb_info->var.yres;
 		ofb->ol_fb->var.xres_virtual	= fbi->fb_info->var.xres_virtual;
@@ -1726,7 +1724,6 @@ static int overlayfb_open(struct fb_info *info, int user)
 static int overlayfb_release(struct fb_info *info, int user)
 {
 	struct mxsfb_layer *ofb = (struct mxsfb_layer*)info->par;
-	struct mxsfb_info *fbi = ofb->fbi;
 
 	BUG_ON(!atomic_read(&ofb->usage));
 
@@ -1735,8 +1732,6 @@ static int overlayfb_release(struct fb_info *info, int user)
 			ofb->ops->disable(ofb);
 
 		ofb->blank_state = -1;
-		writel(0x0, fbi->base + LCDC_AS_CTRL);
-		writel(0x0, fbi->base + LCDC_AS_NEXT_BUF);
 	}
 
 	return 0;
@@ -2011,9 +2006,19 @@ static void init_mxsfb_overlay(struct mxsfb_info *fbi,
 	ofb->ol_fb->var.vmode		= FB_VMODE_NONINTERLACED;
 	ofb->ol_fb->var.nonstd		= 0;
 
+	/* Copy timings of primary fb */
+	ofb->ol_fb->var.pixclock	= fbi->fb_info->var.pixclock;
+	ofb->ol_fb->var.left_margin	= fbi->fb_info->var.left_margin;
+	ofb->ol_fb->var.right_margin	= fbi->fb_info->var.right_margin;
+	ofb->ol_fb->var.upper_margin	= fbi->fb_info->var.upper_margin;
+	ofb->ol_fb->var.lower_margin	= fbi->fb_info->var.lower_margin;
+	ofb->ol_fb->var.hsync_len	= fbi->fb_info->var.hsync_len;
+	ofb->ol_fb->var.vsync_len	= fbi->fb_info->var.vsync_len;
+
 	ofb->ol_fb->fbops = &overlay_fb_ops;
 	ofb->ol_fb->node  = -1;
 	ofb->ol_fb->par	  = ofb;
+	INIT_LIST_HEAD(&ofb->ol_fb->modelist);
 
 	ofb->id = 0;
 	ofb->ops = &ofb_ops;
@@ -2056,6 +2061,7 @@ static void mxsfb_overlay_init(struct mxsfb_info *fbi)
 {
 	int ret;
 	struct mxsfb_layer *ofb = &fbi->overlay;
+	struct fb_videomode ofb_vm;
 
 	ofb->dev = &fbi->pdev->dev;
 	ofb->ol_fb = framebuffer_alloc(0, ofb->dev);
@@ -2065,6 +2071,14 @@ static void mxsfb_overlay_init(struct mxsfb_info *fbi)
 	}
 
 	init_mxsfb_overlay(fbi, ofb);
+
+	/* add videomode to overlay fb */
+	fb_var_to_videomode(&ofb_vm, &fbi->fb_info->var);
+	ret = fb_add_videomode(&ofb_vm, &ofb->ol_fb->modelist);
+	if (ret) {
+		dev_err(ofb->dev, "add vm to ofb failed\n");
+		goto fb_release;
+	}
 
 	ret = register_framebuffer(ofb->ol_fb);
 	if (ret) {
@@ -2079,6 +2093,7 @@ static void mxsfb_overlay_init(struct mxsfb_info *fbi)
 	}
 
 	/* setup the initial params for overlay fb */
+	overlayfb_check_var(&ofb->ol_fb->var, ofb->ol_fb);
 	overlayfb_set_par(ofb->ol_fb);
 
 	ofb->registered = 1;

@@ -246,6 +246,7 @@ struct mxc_epdc_fb_data {
 	int epdc_wb_mode;
 	struct pxp_collision_info col_info;
 	u32 hist_status;
+	u32 pixel_nums;
 
 	struct regmap *gpr;
 	u8 req_gpr;
@@ -465,7 +466,8 @@ static int pxp_wfe_b_process_update(struct mxc_epdc_fb_data *fb_data,
 			      struct mxcfb_rect *update_region);
 static int pxp_wfe_a_process_clear_workingbuffer(struct mxc_epdc_fb_data *fb_data,
 			      u32 src_width, u32 src_height);
-static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat);
+static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat,
+				u32 *pixel_nums);
 
 static void draw_mode0(struct mxc_epdc_fb_data *fb_data);
 static bool is_free_list_full(struct mxc_epdc_fb_data *fb_data);
@@ -2241,6 +2243,7 @@ static int epdc_working_buffer_update(struct mxc_epdc_fb_data *fb_data,
 	u32 wv_mode = upd_data_list->update_desc->upd_data.waveform_mode;
 	int ret = 0;
 	u32 hist_stat;
+	u32 pixel_nums;
 	struct update_desc_list *upd_desc_list;
 
 	ret = pxp_wfe_a_process(fb_data, update_region, upd_data_list);
@@ -2257,7 +2260,8 @@ static int epdc_working_buffer_update(struct mxc_epdc_fb_data *fb_data,
 	}
 
 	/* This is a blocking call, so upon return PxP tx should be done */
-	ret = pxp_complete_update(fb_data, &fb_data->hist_status);
+	ret = pxp_complete_update(fb_data, &fb_data->hist_status,
+					&fb_data->pixel_nums);
 	if (ret) {
 		dev_err(fb_data->dev, "Unable to complete PxP update task: main process\n");
 		return ret;
@@ -2316,7 +2320,7 @@ static int epdc_working_buffer_update(struct mxc_epdc_fb_data *fb_data,
 		}
 
 		/* This is a blocking call, so upon return PxP tx should be done */
-		ret = pxp_complete_update(fb_data, &hist_stat);
+		ret = pxp_complete_update(fb_data, &hist_stat, &pixel_nums);
 		if (ret) {
 			dev_err(fb_data->dev, "Unable to complete PxP update task: reagl/-d process\n");
 			mutex_unlock(&fb_data->pxp_mutex);
@@ -2338,6 +2342,7 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 	u32 post_rotation_xcoord, post_rotation_ycoord, width_pxp_blocks;
 	u32 pxp_input_offs, pxp_output_offs, pxp_output_shift;
 	u32 hist_stat = 0;
+	u32 pixel_nums = 0;
 	int width_unaligned, height_unaligned;
 	bool input_unaligned = false;
 	bool line_overflow = false;
@@ -2588,7 +2593,7 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 	}
 
 	/* This is a blocking call, so upon return PxP tx should be done */
-	ret = pxp_complete_update(fb_data, &hist_stat);
+	ret = pxp_complete_update(fb_data, &hist_stat, &pixel_nums);
 	if (ret) {
 		dev_err(fb_data->dev, "Unable to complete PxP update task: pre_prcoess.\n");
 		mutex_unlock(&fb_data->pxp_mutex);
@@ -2620,7 +2625,7 @@ static int epdc_process_update(struct update_data_list *upd_data_list,
 		}
 
 		/* This is a blocking call, so upon return PxP tx should be done */
-		ret = pxp_complete_update(fb_data, &hist_stat);
+		ret = pxp_complete_update(fb_data, &hist_stat, &pixel_nums);
 		if (ret) {
 			dev_err(fb_data->dev, "Unable to complete PxP update task: dithering process\n");
 			mutex_unlock(&fb_data->pxp_mutex);
@@ -2760,6 +2765,8 @@ static void epdc_submit_work_func(struct work_struct *work)
 	struct update_marker_data *next_marker, *temp_marker;
 	struct mxc_epdc_fb_data *fb_data =
 		container_of(work, struct mxc_epdc_fb_data, epdc_submit_work);
+	struct pxp_config_data *pxp_conf = &fb_data->pxp_conf;
+	struct pxp_proc_data *proc_data = &pxp_conf->proc_data;
 	struct update_data_list *upd_data_list = NULL;
 	struct mxcfb_rect adj_update_region, *upd_region;
 	bool end_merge = false;
@@ -2907,22 +2914,22 @@ static void epdc_submit_work_func(struct work_struct *work)
 	 *   - FB unrotated
 	 *   - FB pixel format = 8-bit grayscale
 	 *   - No look-up transformations (inversion, posterization, etc.)
-	 *
-	 * Note: A bug with EPDC stride prevents us from skipping
-	 * PxP in versions 2.0 and earlier of EPDC.
+	 *   - No scaling/flip
 	 */
-	is_transform = upd_data_list->update_desc->upd_data.flags &
+	is_transform = ((upd_data_list->update_desc->upd_data.flags &
 		(EPDC_FLAG_ENABLE_INVERSION | EPDC_FLAG_USE_DITHERING_Y1 |
 		EPDC_FLAG_USE_DITHERING_Y4 | EPDC_FLAG_FORCE_MONOCHROME |
-		EPDC_FLAG_USE_CMAP) ? true : false;
+		EPDC_FLAG_USE_CMAP)) && (proc_data->scaling == 0) &&
+		(proc_data->hflip == 0) && (proc_data->vflip == 0)) ?
+		true : false;
 
 	/*XXX if we use external mode, we should first use pxp
 	 * to update upd buffer data to working buffer first.
 	 */
 	if ((fb_data->epdc_fb_var.rotate == FB_ROTATE_UR) &&
 		(fb_data->epdc_fb_var.grayscale == GRAYSCALE_8BIT) &&
-		!is_transform && (fb_data->rev > 20) &&
-		!fb_data->restrict_width && !fb_data->epdc_wb_mode) {
+		!is_transform && (proc_data->dither_mode == 0) &&
+		!fb_data->restrict_width) {
 
 		/* If needed, enable EPDC HW while ePxP is processing */
 		if ((fb_data->power_state == POWER_STATE_OFF)
@@ -4085,9 +4092,8 @@ static void epdc_intr_work_func(struct work_struct *work)
 	epdc_luts_active = epdc_any_luts_active(fb_data->rev);
 	epdc_wb_busy = epdc_is_working_buffer_busy();
 
-	/*XXX unsupport update cancelled in external mode temporarily */
 	if (fb_data->epdc_wb_mode)
-		epdc_lut_cancelled = 0;
+		epdc_lut_cancelled = fb_data->pixel_nums == 0 ? true : false;
 	else
 		epdc_lut_cancelled = epdc_is_lut_cancelled();
 
@@ -5987,6 +5993,7 @@ static int pxp_wfe_a_process_clear_workingbuffer(struct mxc_epdc_fb_data *fb_dat
 static int pxp_clear_wb_work_func(struct mxc_epdc_fb_data *fb_data)
 {
 	unsigned int hist_stat;
+	unsigned int pixel_nums;
 	int ret;
 
 	dev_dbg(fb_data->dev, "PxP WFE to clear working buffer.\n");
@@ -6007,7 +6014,7 @@ static int pxp_clear_wb_work_func(struct mxc_epdc_fb_data *fb_data)
 	}
 
 	/* This is a blocking call, so upon return PxP tx should be done */
-	ret = pxp_complete_update(fb_data, &hist_stat);
+	ret = pxp_complete_update(fb_data, &hist_stat, &pixel_nums);
 	if (ret) {
 		dev_err(fb_data->dev, "Unable to complete PxP update task: clear wb process\n");
 		mutex_unlock(&fb_data->pxp_mutex);
@@ -6315,6 +6322,7 @@ static int pxp_wfe_a_process(struct mxc_epdc_fb_data *fb_data,
 	u32 wv_mode = upd_data_list->update_desc->upd_data.waveform_mode;
 	int i, j = 0, ret;
 	int length;
+	bool is_transform;
 
 	dev_dbg(fb_data->dev, "Starting PxP WFE_A process.\n");
 
@@ -6392,12 +6400,22 @@ static int pxp_wfe_a_process(struct mxc_epdc_fb_data *fb_data,
 	if (proc_data->dither_mode) {
 		pxp_conf->wfe_a_fetch_param[0].paddr = fb_data->phys_addr_y4;
 	} else {
-#ifdef USE_PS_AS_OUTPUT
-	pxp_conf->wfe_a_fetch_param[0].paddr = upd_data_list->phys_addr + upd_data_list->update_desc->epdc_offs;
+		is_transform = ((upd_data_list->update_desc->upd_data.flags &
+			(EPDC_FLAG_ENABLE_INVERSION | EPDC_FLAG_USE_DITHERING_Y1 |
+			EPDC_FLAG_USE_DITHERING_Y4 | EPDC_FLAG_FORCE_MONOCHROME |
+			EPDC_FLAG_USE_CMAP)) && (proc_data->scaling == 0) &&
+			(proc_data->hflip == 0) && (proc_data->vflip == 0)) ?
+			true : false;
 
-#else
-	pxp_conf->wfe_a_fetch_param[0].paddr = sg_dma_address(&sg[0]);
-#endif
+		if ((fb_data->epdc_fb_var.rotate == FB_ROTATE_UR) &&
+			(fb_data->epdc_fb_var.grayscale == GRAYSCALE_8BIT) &&
+			!is_transform && (proc_data->dither_mode == 0) &&
+			!fb_data->restrict_width) {
+				pxp_conf->wfe_a_fetch_param[0].paddr =
+					sg_dma_address(&sg[0]);
+		} else
+			pxp_conf->wfe_a_fetch_param[0].paddr =
+				upd_data_list->phys_addr + upd_data_list->update_desc->epdc_offs;
 	}
 
 	/* fetch1 is working buffer */
@@ -6634,7 +6652,8 @@ static int pxp_wfe_b_process_update(struct mxc_epdc_fb_data *fb_data,
 	return 0;
 }
 
-static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat)
+static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat,
+				u32 *pixel_nums)
 {
 	int ret;
 	/*
@@ -6656,6 +6675,7 @@ static int pxp_complete_update(struct mxc_epdc_fb_data *fb_data, u32 *hist_stat)
 		fb_data->pxp_conf.proc_data.lut_map_updated = false;
 
 	*hist_stat = to_tx_desc(fb_data->txd)->hist_status;
+	*pixel_nums = to_tx_desc(fb_data->txd)->pixel_nums;
 	dma_release_channel(&fb_data->pxp_chan->dma_chan);
 	fb_data->pxp_chan = NULL;
 
