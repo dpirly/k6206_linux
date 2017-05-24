@@ -135,110 +135,93 @@ struct platform_device *pdevice;
 #    include <linux/sched.h>
 #    include <linux/profile.h>
 
-struct task_struct *lowmem_deathpending;
+static unsigned long timeout;
+struct task_struct *almostfail;
 
 static int
-task_notify_func(struct notifier_block *self, unsigned long val, void *data);
-
-static struct notifier_block task_nb = {
-    .notifier_call  = task_notify_func,
-};
-
-static int
-task_notify_func(struct notifier_block *self, unsigned long val, void *data)
+notif_func(struct notifier_block *self, unsigned long val, void *data)
 {
     struct task_struct *task = data;
 
-    if (task == lowmem_deathpending)
-        lowmem_deathpending = NULL;
+    if (task == almostfail)
+        almostfail = NULL;
 
     return NOTIFY_DONE;
 }
 
-extern struct task_struct *lowmem_deathpending;
-static unsigned long lowmem_deathpending_timeout;
+static struct notifier_block task_nb = {
+    .notifier_call  = notif_func,
+};
 
-static int force_contiguous_lowmem_shrink(IN gckKERNEL Kernel)
+static int force_shrink_mem(IN gckKERNEL Kernel)
 {
-    struct task_struct *p;
+    struct task_struct *p = NULL;
     struct task_struct *selected = NULL;
-    int tasksize;
-        int ret = -1;
-    int min_adj = 0;
-    int selected_tasksize = 0;
-    int selected_oom_adj;
-    /*
-     * If we already have a death outstanding, then
-     * bail out right away; indicating to vmscan
-     * that we have nothing further to offer on
-     * this pass.
-     *
-     */
-    if (lowmem_deathpending &&
-        time_before_eq(jiffies, lowmem_deathpending_timeout))
-        return 0;
-    selected_oom_adj = min_adj;
+    int cur_size = 0;
+    int set_size = 0;
+    int oom_val = 0;
+    int mem_adj = 0;
+    int retVal = -1;
 
-       rcu_read_lock();
+    if (almostfail && time_before_eq(jiffies, timeout))
+        return 0;
+
+    rcu_read_lock();
+
     for_each_process(p) {
+        gcuDATABASE_INFO info;
         struct mm_struct *mm;
         struct signal_struct *sig;
-                gcuDATABASE_INFO info;
-        int oom_adj;
+
+        cur_size = 0;
 
         task_lock(p);
-        mm = p->mm;
         sig = p->signal;
-        if (!mm || !sig) {
+        mm = p->mm;
+        if (!sig || !mm) {
             task_unlock(p);
             continue;
         }
-        oom_adj = sig->oom_score_adj;
-        if (oom_adj < min_adj) {
+        oom_val = sig->oom_score_adj;
+        if (oom_val < 0) {
             task_unlock(p);
             continue;
         }
-
-        tasksize = 0;
         task_unlock(p);
-               rcu_read_unlock();
 
+        rcu_read_unlock();
         if (gckKERNEL_QueryProcessDB(Kernel, p->pid, gcvFALSE, gcvDB_VIDEO_MEMORY, &info) == gcvSTATUS_OK){
-            tasksize += info.counters.bytes / PAGE_SIZE;
+            cur_size += info.counters.bytes / PAGE_SIZE;
         }
         if (gckKERNEL_QueryProcessDB(Kernel, p->pid, gcvFALSE, gcvDB_CONTIGUOUS, &info) == gcvSTATUS_OK){
-            tasksize += info.counters.bytes / PAGE_SIZE;
+            cur_size += info.counters.bytes / PAGE_SIZE;
         }
+        rcu_read_lock();
 
-               rcu_read_lock();
+        if (cur_size <= 0) continue;
 
-        if (tasksize <= 0)
-            continue;
-
-        gckOS_Print("<gpu> pid %d (%s), adj %d, size %d \n", p->pid, p->comm, oom_adj, tasksize);
+        gckOS_Print("<gpu> pid %d (%s), adj %d, size %d \n", p->pid, p->comm, oom_val, cur_size);
 
         if (selected) {
-            if (oom_adj < selected_oom_adj)
-                continue;
-            if (oom_adj == selected_oom_adj &&
-                tasksize <= selected_tasksize)
-                continue;
+            if ((oom_val < mem_adj) || (oom_val == mem_adj && cur_size <= set_size)) continue;
         }
+        set_size = cur_size;
+        mem_adj = oom_val;
         selected = p;
-        selected_tasksize = tasksize;
-        selected_oom_adj = oom_adj;
     }
-    if (selected && selected_oom_adj > 0) {
+
+    if (selected && mem_adj > 0) {
         gckOS_Print("<gpu> send sigkill to %d (%s), adj %d, size %d\n",
-                 selected->pid, selected->comm,
-                 selected_oom_adj, selected_tasksize);
-        lowmem_deathpending = selected;
-        lowmem_deathpending_timeout = jiffies + HZ;
+                 selected->pid, selected->comm, mem_adj, set_size);
+        almostfail = selected;
+        timeout = jiffies + HZ;
         force_sig(SIGKILL, selected);
-        ret = 0;
+        retVal = 0;
     }
-       rcu_read_unlock();
-    return ret;
+
+    rcu_read_unlock();
+
+    return retVal;
 }
 
 extern gckKERNEL
@@ -264,7 +247,7 @@ _ShrinkMemory(
 
     if (kernel != gcvNULL)
     {
-        if (force_contiguous_lowmem_shrink(kernel) != 0)
+        if (force_shrink_mem(kernel) != 0)
             status = gcvSTATUS_OUT_OF_MEMORY;
     }
     else

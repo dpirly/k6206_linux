@@ -1348,8 +1348,9 @@ struct _gckMMU
     gctUINT32                   safeAddress;
     gctSIZE_T                   safePageSize;
 
-    gctUINT32                   flatMappingStart;
-    gctUINT32                   flatMappingEnd;
+    /* physBase,physSize flat mapping area. */
+    gctUINT64                   flatMappingStart;
+    gctUINT64                   flatMappingEnd;
 
     /* List of hardware which uses this MMU. */
     gcsLISTHEAD                 hardwareList;

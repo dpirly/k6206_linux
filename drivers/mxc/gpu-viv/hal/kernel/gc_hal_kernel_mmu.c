@@ -1211,7 +1211,7 @@ _Construct(
     gctUINT32 physBase;
     gctUINT32 physSize;
     gctUINT32 contiguousBase;
-    gctUINT32 contiguousSize;
+    gctUINT32 contiguousSize = 0;
     gctUINT32 gpuAddress;
     gctPHYS_ADDR_T gpuPhysical;
     gcsADDRESS_AREA_PTR area = gcvNULL;
@@ -1350,13 +1350,8 @@ _Construct(
 
         gcmkSAFECASTPHYSADDRT(gpuAddress, gpuPhysical);
 
-        mmu->flatMappingStart = gpuAddress;
-        mmu->flatMappingEnd   = gpuAddress + physSize;
-
-        if ( mmu->flatMappingEnd <  mmu->flatMappingStart)
-        {
-            mmu->flatMappingEnd = gcvMAXUINT32;
-        }
+        mmu->flatMappingStart = (gctUINT64) gpuAddress;
+        mmu->flatMappingEnd   = (gctUINT64) gpuAddress + physSize;
 
         if (physSize)
         {
@@ -1369,14 +1364,43 @@ _Construct(
         if (gcmIS_SUCCESS(status))
         {
             status = gckOS_QueryOption(mmu->os, "contiguousSize", &contiguousSize);
+        }
 
-            if (gcmIS_SUCCESS(status))
+        if (gcmIS_SUCCESS(status) && contiguousSize)
+        {
+            gctUINT64 base = contiguousBase;
+            gctUINT64 size = contiguousSize;
+            gctUINT64 end  = base + size;
+
+            end = gcmMIN(end, 0x100000000ull);
+
+            if (base < mmu->flatMappingStart)
             {
-                if (contiguousSize && (contiguousBase < mmu->flatMappingStart || contiguousBase + contiguousSize > mmu->flatMappingEnd))
+                end  = gcmMIN(end, mmu->flatMappingStart);
+                contiguousSize = (gctUINT32) (end - base);
+            }
+            else if (end > mmu->flatMappingEnd)
+            {
+                base = gcmMAX(base, mmu->flatMappingEnd);
+
+                contiguousBase = (gctUINT32) base;
+                contiguousSize = (gctUINT32) (end - base);
+
+                if (base > 0xFFFFFFFF)
                 {
-                    /* Setup flat mapping for reserved memory (VIDMEM). */
-                    gcmkONERROR(_FillFlatMapping(mmu, contiguousBase, contiguousSize));
+                    contiguousSize = 0;
                 }
+            }
+            else
+            {
+                /* contiguous pool is inside physBase,physSize. */
+                contiguousSize = 0;
+            }
+
+            if (contiguousSize)
+            {
+                /* Setup flat mapping for reserved memory (VIDMEM). */
+                gcmkONERROR(_FillFlatMapping(mmu, contiguousBase, contiguousSize));
             }
         }
 

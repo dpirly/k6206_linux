@@ -422,10 +422,10 @@ typedef struct _gcsHAL_INTERFACE
             OUT gctUINT32               baseAddress;
 
             /* Start of flat mapping range. */
-            OUT gctUINT32               flatMappingStart;
+            OUT gctUINT64               flatMappingStart;
 
             /* End of flat mapping range. */
-            OUT gctUINT32               flatMappingEnd;
+            OUT gctUINT64               flatMappingEnd;
         }
         GetBaseAddress;
 
