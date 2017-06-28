@@ -2269,6 +2269,11 @@
 		cpu-base-addr = <0x40000000>;
 		status = "disabled";
 	};
+
+	imx_ion {
+		compatible = "fsl,mxc-ion";
+		fsl,heap-id = <0>;
+	};
 };
 
 &A53_0 {
