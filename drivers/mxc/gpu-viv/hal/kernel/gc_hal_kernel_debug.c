@@ -1978,12 +1978,10 @@ gckOS_DumpBuffer(
     gctPHYS_ADDR_T physical;
     gctUINT32 address                   = 0;
     gcsBUFFERED_OUTPUT_PTR outputBuffer = gcvNULL;
-    static volatile gctBOOL userDump;
+    static gctBOOL userLocked;
     gctCHAR *buffer                     = (gctCHAR*)Buffer;
 
     gcmkDECLARE_LOCK(lockHandle);
-
-    gcmkLOCKSECTION(lockHandle);
 
     /* Request lock when not coming from user,
        or coming from user and not yet locked
@@ -1995,7 +1993,8 @@ gckOS_DumpBuffer(
         )
         {
             /* Beginning of a user dump. */
-            userDump = gcvTRUE;
+            gcmkLOCKSECTION(lockHandle);
+            userLocked = gcvTRUE;
         }
         /* Else, let it pass through. */
 
@@ -2005,8 +2004,6 @@ gckOS_DumpBuffer(
          && (buffer[1] != '[')
         )
         {
-            gcmkUNLOCKSECTION(lockHandle);
-
             /* No error tolerence in parser, so we stop on error to make noise. */
             for (;;)
             {
@@ -2022,15 +2019,8 @@ gckOS_DumpBuffer(
     }
     else
     {
-        while (userDump)
-        {
-            gcmkUNLOCKSECTION(lockHandle);
-
-            /* Yield CPU to wait user dump. */
-            gckOS_Delay(Os, 1000);
-
-            gcmkLOCKSECTION(lockHandle);
-        }
+        gcmkLOCKSECTION(lockHandle);
+        userLocked = gcvFALSE;
     }
 
     if (Buffer != gcvNULL)
@@ -2093,7 +2083,7 @@ gckOS_DumpBuffer(
 
     /* Unlock when not coming from user,
        or coming from user and not yet locked. */
-    if (userDump)
+    if (userLocked)
     {
         gctUINT i = 0;
 
@@ -2102,7 +2092,9 @@ gckOS_DumpBuffer(
             if (buffer[i] == ']')
             {
                 /* End of a user dump. */
-                userDump = gcvFALSE;
+                userLocked = gcvFALSE;
+                gcmkUNLOCKSECTION(lockHandle);
+
                 break;
             }
 
@@ -2110,8 +2102,10 @@ gckOS_DumpBuffer(
         }
         /* Else, let it pass through, don't unlock. */
     }
-
-    gcmkUNLOCKSECTION(lockHandle);
+    else
+    {
+        gcmkUNLOCKSECTION(lockHandle);
+    }
 }
 
 /*******************************************************************************

@@ -1594,6 +1594,7 @@ gckHARDWARE_Construct(
             ? 0x0100
             : 0x0000;
 
+    /* VIV: Don't do sftware reset here for 0x2000, 0xfff5450 to workaround #12789. */
     if(!(_IsHardwareMatch(hardware, gcv2000, 0xffff5450)))
     {
         /* _ResetGPU need powerBaseAddress. */
@@ -7527,22 +7528,14 @@ gckHARDWARE_SetPowerManagementState(
             }
         }
 
-        if(_IsHardwareMatch(Hardware, gcv400, 0x4645))
-        {
-            gcmkONERROR(gckCOMMAND_Start(command));
+        gcmkONERROR(gckCOMMAND_Start(command));
 
-            gcmkONERROR(_FlushCache(Hardware, command));
+        gcmkONERROR(_FlushCache(Hardware, command));
 
-            gckOS_Delay(gcvNULL, 1);
+        gckOS_Delay(gcvNULL, 1);
 
-            /* Stop the command parser. */
-            gcmkONERROR(gckCOMMAND_Stop(command));
-        }
-        else
-        {
-            gckHARDWARE_ExecuteFunctions(Hardware, gcvHARDWARE_FUNCTION_FLUSH);
-            gckOS_Delay(gcvNULL, 1);
-        }
+        /* Stop the command parser. */
+        gcmkONERROR(gckCOMMAND_Stop(command));
 
         flag |= gcvPOWER_FLAG_CLOCK_OFF;
     }
