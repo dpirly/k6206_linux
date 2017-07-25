@@ -304,6 +304,105 @@
 			};
 		};
 
+		pd_audio: PD_AUDIO {
+			compatible = "nxp,imx8-pd";
+			reg = <SC_R_LAST>;
+			#power-domain-cells = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			pd_asrc0:PD_AUD_ASRC_0 {
+				reg = <SC_R_ASRC_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_asrc1: PD_AUD_ASRC_1 {
+				reg = <SC_R_ASRC_1>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_esai0: PD_AUD_ESAI_0 {
+				reg = <SC_R_ESAI_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_spdif0: PD_AUD_SPDIF_0 {
+				reg = <SC_R_SPDIF_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai0:PD_AUD_SAI_0 {
+				reg = <SC_R_SAI_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai1: PD_AUD_SAI_1 {
+				reg = <SC_R_SAI_1>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai2: PD_AUD_SAI_2 {
+				reg = <SC_R_SAI_2>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai3: PD_AUD_SAI_3 {
+				reg = <SC_R_SAI_3>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai4: PD_AUD_SAI_4 {
+				reg = <SC_R_SAI_4>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_sai5: PD_AUD_SAI_5 {
+				reg = <SC_R_SAI_5>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt5: PD_AUD_GPT_5 {
+				reg = <SC_R_GPT_5>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt6: PD_AUD_GPT_6 {
+				reg = <SC_R_GPT_6>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt7: PD_AUD_GPT_7 {
+				reg = <SC_R_GPT_7>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt8: PD_AUD_GPT_8 {
+				reg = <SC_R_GPT_8>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt9: PD_AUD_GPT_9 {
+				reg = <SC_R_GPT_9>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_gpt10: PD_AUD_GPT_10 {
+				reg = <SC_R_GPT_10>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_amix: PD_AUD_AMIX {
+				reg = <SC_R_AMIX>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_mqs0: PD_AUD_MQS_0 {
+				reg = <SC_R_MQS_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+		};
+
 		pd_dma: PD_DMA {
 			compatible = "nxp,imx8-pd";
 			reg = <SC_R_LAST>;
@@ -551,6 +650,51 @@
 		interrupt-parent = <&gic>;
 		clocks = <&clk IMX8QXP_UART0_CLK>;
 		clock-names = "ipg";
+		status = "disabled";
+	};
+
+	edma2: dma-controller@591F0000 {
+		compatible = "fsl,imx8qm-edma";
+		reg = <0x0 0x59200000 0x0 0x10000>, /* asrc0 */
+			<0x0 0x59210000 0x0 0x10000>,
+			<0x0 0x59220000 0x0 0x10000>,
+			<0x0 0x59230000 0x0 0x10000>,
+			<0x0 0x59240000 0x0 0x10000>,
+			<0x0 0x59250000 0x0 0x10000>,
+			<0x0 0x59260000 0x0 0x10000>, /* esai0 rx */
+			<0x0 0x59270000 0x0 0x10000>, /* esai0 tx */
+			<0x0 0x59280000 0x0 0x10000>, /* spdif0 rx */
+			<0x0 0x59290000 0x0 0x10000>, /* spdif0 tx */
+			<0x0 0x592c0000 0x0 0x10000>, /* sai0 rx */
+			<0x0 0x592d0000 0x0 0x10000>; /* sai0 tx */
+		#dma-cells = <3>;
+		shared-interrupt;
+		dma-channels = <12>;
+		interrupts = <GIC_SPI 374 IRQ_TYPE_LEVEL_HIGH>, /* asrc 0 */
+				<GIC_SPI 375 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 376 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 377 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 378 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 379 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 410 IRQ_TYPE_LEVEL_HIGH>, /* esai0 */
+				<GIC_SPI 410 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 457 IRQ_TYPE_LEVEL_HIGH>, /* spdif0 */
+				<GIC_SPI 459 IRQ_TYPE_LEVEL_HIGH>,
+				<GIC_SPI 315 IRQ_TYPE_LEVEL_HIGH>, /* sai0 */
+				<GIC_SPI 315 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "edma-chan0-tx", "edma-chan1-tx", /* asrc0 */
+				"edma-chan2-tx", "edma-chan3-tx",
+				"edma-chan4-tx", "edma-chan5-tx",
+				"edma-chan6-tx", "edma-chan7-tx", /* esai0 */
+				"edma-chan8-tx", "edma-chan9-tx", /* spdif0 */
+				"edma-chan12-tx", "edma-chan13-tx"; /* sai0 */
+		status = "okay";
+	};
+
+	acm: acm@59e00000 {
+		compatible = "nxp,imx8qm-acm";
+		reg = <0x0 0x59e00000 0x0 0x1D0000>;
+		power-domains = <&pd_sai0>;
 		status = "disabled";
 	};
 };
