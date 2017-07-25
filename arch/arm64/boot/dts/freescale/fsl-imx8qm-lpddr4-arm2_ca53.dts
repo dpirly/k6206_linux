@@ -15,18 +15,10 @@
 
 #include "fsl-imx8qm-lpddr4-arm2.dts"
 
-&A53_0 {
+&A72_0 {
 	device_type = "";
 };
 
-&A53_1 {
-	device_type = "";
-};
-
-&A53_2 {
-	device_type = "";
-};
-
-&A53_3 {
+&A72_1 {
 	device_type = "";
 };
