@@ -29,7 +29,7 @@ static struct snd_pcm_hardware snd_imx_hardware = {
 		SNDRV_PCM_INFO_RESUME,
 	.buffer_bytes_max = FSL_ASRC_DMABUF_SIZE,
 	.period_bytes_min = 128,
-	.period_bytes_max = 65535, /* Limited by SDMA engine */
+	.period_bytes_max = 65532, /* Limited by SDMA engine */
 	.periods_min = 2,
 	.periods_max = 255,
 	.fifo_size = 0,
@@ -211,25 +211,43 @@ static int fsl_asrc_dma_hw_params(struct snd_pcm_substream *substream,
 
 	/* Get DMA request of Back-End */
 	tmp_chan = dma_request_slave_channel(dev_be, tx ? "tx" : "rx");
-	tmp_data = tmp_chan->private;
-	pair->dma_data.dma_request = tmp_data->dma_request;
-	be_peripheral_type = tmp_data->peripheral_type;
-	dma_release_channel(tmp_chan);
+	if (tmp_chan) {
+		tmp_data = tmp_chan->private;
+		if (tmp_data) {
+			pair->dma_data.dma_request = tmp_data->dma_request;
+			be_peripheral_type = tmp_data->peripheral_type;
+			if (tx && be_peripheral_type == IMX_DMATYPE_SSI_DUAL)
+				pair->dma_data.dst_dualfifo = true;
+			if (!tx && be_peripheral_type == IMX_DMATYPE_SSI_DUAL)
+				pair->dma_data.src_dualfifo = true;
+		}
+		dma_release_channel(tmp_chan);
+	}
 
 	/* Get DMA request of Front-End */
 	tmp_chan = fsl_asrc_get_dma_channel(pair, dir);
-	tmp_data = tmp_chan->private;
-	pair->dma_data.dma_request2 = tmp_data->dma_request;
-	pair->dma_data.peripheral_type = tmp_data->peripheral_type;
-	pair->dma_data.priority = tmp_data->priority;
-	dma_release_channel(tmp_chan);
+	if (tmp_chan) {
+		tmp_data = tmp_chan->private;
+		if (tmp_data) {
+			pair->dma_data.dma_request2 = tmp_data->dma_request;
+			pair->dma_data.peripheral_type =
+				 tmp_data->peripheral_type;
+			pair->dma_data.priority = tmp_data->priority;
+		}
+		dma_release_channel(tmp_chan);
+	}
 
-	if (tx && be_peripheral_type == IMX_DMATYPE_SSI_DUAL)
-		pair->dma_data.dst_dualfifo = true;
-	if (!tx && be_peripheral_type == IMX_DMATYPE_SSI_DUAL)
-		pair->dma_data.src_dualfifo = true;
+	/* For sdma DEV_TO_DEV, there is two dma request
+	 * But for emda DEV_TO_DEV, there is only one dma request, which is
+	 * from the BE.
+	 */
+	if (pair->dma_data.dma_request2 != pair->dma_data.dma_request)
+		pair->dma_chan[dir] =
+			dma_request_channel(mask, filter, &pair->dma_data);
+	else
+		pair->dma_chan[dir] =
+			dma_request_slave_channel(dev_be, tx ? "tx" : "rx");
 
-	pair->dma_chan[dir] = dma_request_channel(mask, filter, &pair->dma_data);
 	if (!pair->dma_chan[dir]) {
 		dev_err(dev, "failed to request DMA channel for Back-End\n");
 		return -EINVAL;
