@@ -587,7 +587,6 @@
 			phy-names = "usb2-phy", "usb3-phy";
 			power-domains = <&power 2>;
 			snps,power-down-scale = <2>;
-			snps,dis_u2_susphy_quirk;
 			status = "disabled";
 		};
 	};
@@ -627,7 +626,6 @@
 			phy-names = "usb2-phy", "usb3-phy";
 			power-domains = <&power 3>;
 			snps,power-down-scale = <2>;
-			snps,dis_u2_susphy_quirk;
 			status = "disabled";
 		};
 	};
