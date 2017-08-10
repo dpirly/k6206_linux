@@ -193,3 +193,11 @@
 	assigned-clock-rates = <0>, <786432000>, <98306000>, <24576000>;
 	status = "okay";
 };
+
+&gpu {
+	status = "okay";
+};
+
+&vpu {
+	status = "okay";
+};
