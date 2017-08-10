@@ -25,6 +25,12 @@
 	model = "Freescale i.MX8QM ARM2";
 	compatible = "fsl,imx8qm-arm2", "fsl,imx8qm";
 
+	bcmdhd_wlan_0: bcmdhd_wlan@0 {
+		compatible = "android,bcmdhd_wlan";
+		bcmdhd_fw = "/lib/firmware/bcm/1FD_BCM89359/fw_bcmdhd.bin";
+		bcmdhd_nv = "/lib/firmware/bcm/1FD_BCM89359/bcmdhd.cal";
+	};
+
 	chosen {
 		bootargs = "console=ttyLP0,115200 earlycon=lpuart32,0x5a060000,115200";
 		stdout-path = &lpuart0;
@@ -92,6 +98,14 @@
 			enable-active-high;
 		};
 
+		epdev_on: fixedregulator@100 {
+			compatible = "regulator-fixed";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+			regulator-name = "epdev_on";
+			gpio = <&pca9557_b 3 0>;
+			enable-active-high;
+		};
 	};
 
 	sound-cs42888 {
@@ -102,6 +116,13 @@
 		audio-codec = <&codec>;
 		asrc-controller = <&asrc0>;
 	};
+
+	sound-amix-sai {
+		compatible = "fsl,imx-audio-amix";
+		model = "amix-audio-sai";
+		dais = <&sai6>, <&sai7>;
+		amix-controller = <&amix>;
+	};
 };
 
 &acm {
@@ -109,6 +130,10 @@
 			<&clk IMX8QM_AUD_ACM_AUD_PLL_CLK0_DIV>,
 			<&clk IMX8QM_AUD_ACM_AUD_REC_CLK0_DIV>;
 	assigned-clock-rates = <786432000>, <24576000>, <24576000>;
+	status = "okay";
+};
+
+&amix {
 	status = "okay";
 };
 
@@ -129,6 +154,26 @@
 			<&clk IMX8QM_AUD_ESAI_0_EXTAL_IPG>;
 	assigned-clock-parents = <&clk IMX8QM_AUD_ACM_AUD_PLL_CLK0_CLK>;
 	assigned-clock-rates = <0>, <24576000>;
+	status = "okay";
+};
+
+&sai6 {
+	assigned-clocks = <&clk IMX8QM_ACM_SAI6_MCLK_SEL>,
+			<&clk IMX8QM_AUD_SAI_6_MCLK>;
+	assigned-clock-parents = <&clk IMX8QM_AUD_ACM_AUD_PLL_CLK0_CLK>;
+	assigned-clock-rates = <0>, <24576000>;
+	fsl,sai-asynchronous;
+	fsl,txm-rxs;
+	status = "okay";
+};
+
+&sai7 {
+	assigned-clocks = <&clk IMX8QM_ACM_SAI7_MCLK_SEL>,
+			<&clk IMX8QM_AUD_SAI_7_MCLK>;
+	assigned-clock-parents = <&clk IMX8QM_AUD_ACM_AUD_PLL_CLK0_CLK>;
+	assigned-clock-rates = <0>, <24576000>;
+	fsl,sai-asynchronous;
+	fsl,txm-rxs;
 	status = "okay";
 };
 
@@ -584,7 +629,7 @@
 	#size-cells = <0>;
 	pinctrl-names = "default";
 	clock-frequency = <100000>;
-	status = "okay";
+	status = "disabled";
 
 	max9286_mipi@6A	 {
 		compatible = "maxim,max9286_mipi";
@@ -758,7 +803,7 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	virtual-channel;
-	status = "okay";
+	status = "disabled";
 
 	/* Camera 0 MIPI CSI-2 (CSIS1) */
 	port@1 {
@@ -842,5 +887,6 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_pcieb>;
 	reset-gpio = <&gpio5 0 GPIO_ACTIVE_LOW>;
+	epdev_on-supply = <&epdev_on>;
 	status = "okay";
 };

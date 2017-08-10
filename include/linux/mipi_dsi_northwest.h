@@ -35,7 +35,6 @@
 
 /* SRC */
 #define SRC_MIPIPHY_RCR		0x28
-
 #define MIPI_DSI_RESET_BYTE_N	0x2
 #define MIPI_DSI_RESET_N	0x4
 #define MIPI_DSI_DPI_RESET_N	0x8

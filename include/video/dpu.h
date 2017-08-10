@@ -248,8 +248,11 @@ typedef enum {
 	FD_SRC_FETCHECO0	= ID_FETCHECO0,
 	FD_SRC_FETCHECO1	= ID_FETCHECO1,
 	FD_SRC_FETCHECO2	= ID_FETCHECO2,
+	FD_SRC_FETCHDECODE0	= ID_FETCHDECODE0,
+	FD_SRC_FETCHDECODE1	= ID_FETCHDECODE1,
 	FD_SRC_FETCHDECODE2	= ID_FETCHDECODE2,
 	FD_SRC_FETCHDECODE3	= ID_FETCHDECODE3,
+	FD_SRC_FETCHWARP2	= ID_FETCHWARP2,
 } fd_dynamic_src_sel_t;
 
 typedef enum {
@@ -481,7 +484,8 @@ void fetchdecode_clipoffset(struct dpu_fetchdecode *fd, unsigned int x,
 			    unsigned int y);
 void fetchdecode_clipdimensions(struct dpu_fetchdecode *fd, unsigned int w,
 				unsigned int h);
-void fetchdecode_layerproperty(struct dpu_fetchdecode *fd, bool enable);
+void fetchdecode_source_buffer_enable(struct dpu_fetchdecode *fd);
+void fetchdecode_source_buffer_disable(struct dpu_fetchdecode *fd);
 bool fetchdecode_is_enabled(struct dpu_fetchdecode *fd);
 void fetchdecode_framedimensions(struct dpu_fetchdecode *fd, unsigned int w,
 				 unsigned int h);
@@ -493,10 +497,41 @@ void fetchdecode_controltrigger(struct dpu_fetchdecode *fd, bool trigger);
 int fetchdecode_fetchtype(struct dpu_fetchdecode *fd, fetchtype_t *type);
 shadow_load_req_t fetchdecode_to_shdldreq_t(struct dpu_fetchdecode *fd);
 u32 fetchdecode_get_vproc_mask(struct dpu_fetchdecode *fd);
+bool fetchdecode_need_fetcheco(struct dpu_fetchdecode *fd, u32 fmt);
 unsigned int fetchdecode_get_stream_id(struct dpu_fetchdecode *fd);
 void fetchdecode_set_stream_id(struct dpu_fetchdecode *fd, unsigned int id);
 struct dpu_fetchdecode *dpu_fd_get(struct dpu_soc *dpu, int id);
 void dpu_fd_put(struct dpu_fetchdecode *fd);
+
+/* Fetch ECO Unit */
+struct dpu_fetcheco;
+void fetcheco_shden(struct dpu_fetcheco *fe, bool enable);
+void fetcheco_baseaddress(struct dpu_fetcheco *fe, dma_addr_t paddr);
+void fetcheco_source_bpp(struct dpu_fetcheco *fe, int bpp);
+void fetcheco_source_stride(struct dpu_fetcheco *fe, int stride);
+void fetcheco_src_buf_dimensions(struct dpu_fetcheco *fe, unsigned int w,
+				 unsigned int h, u32 fmt);
+void fetcheco_set_fmt(struct dpu_fetcheco *fe, u32 fmt);
+void fetcheco_layeroffset(struct dpu_fetcheco *fe, unsigned int x,
+			  unsigned int y);
+void fetcheco_clipoffset(struct dpu_fetcheco *fe, unsigned int x,
+			 unsigned int y);
+void fetcheco_clipdimensions(struct dpu_fetcheco *fe, unsigned int w,
+			     unsigned int h);
+void fetcheco_source_buffer_enable(struct dpu_fetcheco *fe);
+void fetcheco_source_buffer_disable(struct dpu_fetcheco *fe);
+bool fetcheco_is_enabled(struct dpu_fetcheco *fe);
+void fetcheco_framedimensions(struct dpu_fetcheco *fe, unsigned int w,
+			      unsigned int h);
+void fetcheco_frameresampling(struct dpu_fetcheco *fe, unsigned int x,
+			      unsigned int y);
+void fetcheco_controltrigger(struct dpu_fetcheco *fe, bool trigger);
+int fetcheco_fetchtype(struct dpu_fetcheco *fe, fetchtype_t *type);
+dpu_block_id_t fetcheco_get_block_id(struct dpu_fetcheco *fe);
+unsigned int fetcheco_get_stream_id(struct dpu_fetcheco *fe);
+void fetcheco_set_stream_id(struct dpu_fetcheco *fe, unsigned int id);
+struct dpu_fetcheco *dpu_fe_get(struct dpu_soc *dpu, int id);
+void dpu_fe_put(struct dpu_fetcheco *fe);
 
 /* Fetch Layer Unit */
 struct dpu_fetchlayer;
@@ -597,12 +632,15 @@ void vscaler_set_stream_id(struct dpu_vscaler *vs, unsigned int id);
 struct dpu_vscaler *dpu_vs_get(struct dpu_soc *dpu, int id);
 void dpu_vs_put(struct dpu_vscaler *vs);
 
+struct dpu_fetcheco *fetchdecode_get_fetcheco(struct dpu_fetchdecode *fd);
 struct dpu_hscaler *fetchdecode_get_hscaler(struct dpu_fetchdecode *fd);
 struct dpu_vscaler *fetchdecode_get_vscaler(struct dpu_fetchdecode *fd);
 
+bool dpu_vproc_has_fetcheco_cap(u32 cap_mask);
 bool dpu_vproc_has_hscale_cap(u32 cap_mask);
 bool dpu_vproc_has_vscale_cap(u32 cap_mask);
 
+u32 dpu_vproc_get_fetcheco_cap(u32 cap_mask);
 u32 dpu_vproc_get_hscale_cap(u32 cap_mask);
 u32 dpu_vproc_get_vscale_cap(u32 cap_mask);
 
@@ -620,6 +658,7 @@ struct dpu_plane_res {
 	struct dpu_constframe	*cf[2];
 	struct dpu_extdst	*ed[2];
 	struct dpu_fetchdecode	*fd[MAX_FD_NUM];
+	struct dpu_fetcheco	*fe[2];
 	struct dpu_framegen	*fg;
 	struct dpu_hscaler	*hs[2];
 	struct dpu_layerblend	*lb[MAX_LB_NUM];
@@ -635,6 +674,7 @@ struct dpu_plane_grp {
 	struct list_head	list;
 	struct mutex		lock;
 	unsigned int		hw_plane_num;
+	unsigned int		hw_plane_fetcheco_num;
 	unsigned int		hw_plane_hscaler_num;
 	unsigned int		hw_plane_vscaler_num;
 	unsigned int		id;

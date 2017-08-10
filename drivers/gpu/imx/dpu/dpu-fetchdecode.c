@@ -21,22 +21,45 @@
 #include <video/dpu.h>
 #include "dpu-prv.h"
 
-#define FD_NUM				4
+#define FD_NUM_V1			4
+#define FD_NUM_V2			2
 
-static const u32 fd_vproc_cap[FD_NUM] = {
-	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4,
-	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5,
-	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4,
-	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5,
+static const u32 fd_vproc_cap_v1[FD_NUM_V1] = {
+	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4 |
+	DPU_VPROC_CAP_FETCHECO0,
+	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5 |
+	DPU_VPROC_CAP_FETCHECO1,
+	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4 |
+	DPU_VPROC_CAP_FETCHECO0,
+	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5 |
+	DPU_VPROC_CAP_FETCHECO1,
+};
+
+static const u32 fd_vproc_cap_v2[FD_NUM_V2] = {
+	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4 |
+	DPU_VPROC_CAP_FETCHECO0,
+	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5 |
+	DPU_VPROC_CAP_FETCHECO1,
 };
 
 #define PIXENGCFG_DYNAMIC		0x8
-#define SRC_NUM				3
-static const fd_dynamic_src_sel_t fd_srcs[FD_NUM][SRC_NUM] = {
+#define SRC_NUM_V1			3
+#define SRC_NUM_V2			4
+static const fd_dynamic_src_sel_t fd_srcs_v1[FD_NUM_V1][SRC_NUM_V1] = {
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO0, FD_SRC_FETCHDECODE2 },
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO1, FD_SRC_FETCHDECODE3 },
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO0, FD_SRC_FETCHECO2 },
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO1, FD_SRC_FETCHECO2 },
+};
+
+static const fd_dynamic_src_sel_t fd_srcs_v2[FD_NUM_V2][SRC_NUM_V2] = {
+	{
+	  FD_SRC_DISABLE,	FD_SRC_FETCHECO0,
+	  FD_SRC_FETCHDECODE1,	FD_SRC_FETCHWARP2
+	}, {
+	  FD_SRC_DISABLE,	FD_SRC_FETCHECO1,
+	  FD_SRC_FETCHDECODE0,	FD_SRC_FETCHWARP2
+	},
 };
 
 #define PIXENGCFG_STATUS		0xC
@@ -112,15 +135,40 @@ static inline void dpu_fd_write(struct dpu_fetchdecode *fd, u32 value,
 int fetchdecode_pixengcfg_dynamic_src_sel(struct dpu_fetchdecode *fd,
 					  fd_dynamic_src_sel_t src)
 {
+	struct dpu_soc *dpu = fd->dpu;
+	const struct dpu_devtype *devtype = dpu->devtype;
 	int i;
 
 	mutex_lock(&fd->mutex);
-	for (i = 0; i < SRC_NUM; i++) {
-		if (fd_srcs[fd->id][i] == src) {
-			dpu_pec_fd_write(fd, src, PIXENGCFG_DYNAMIC);
-			mutex_unlock(&fd->mutex);
-			return 0;
+	if (devtype->version == DPU_V1) {
+		for (i = 0; i < SRC_NUM_V1; i++) {
+			if (fd_srcs_v1[fd->id][i] == src) {
+				dpu_pec_fd_write(fd, src, PIXENGCFG_DYNAMIC);
+				mutex_unlock(&fd->mutex);
+				return 0;
+			}
 		}
+	} else if (devtype->version == DPU_V2) {
+		const unsigned int *block_id_map = devtype->sw2hw_block_id_map;
+		u32 mapped_src;
+
+		if (WARN_ON(!block_id_map))
+			return -EINVAL;
+
+		for (i = 0; i < SRC_NUM_V2; i++) {
+			if (fd_srcs_v2[fd->id][i] == src) {
+				mapped_src = block_id_map[src];
+				if (WARN_ON(mapped_src == NA))
+					return -EINVAL;
+
+				dpu_pec_fd_write(fd, mapped_src,
+							PIXENGCFG_DYNAMIC);
+				mutex_unlock(&fd->mutex);
+				return 0;
+			}
+		}
+	} else {
+		WARN_ON(1);
 	}
 	mutex_unlock(&fd->mutex);
 
@@ -215,13 +263,84 @@ EXPORT_SYMBOL_GPL(fetchdecode_src_buf_dimensions);
 
 void fetchdecode_set_fmt(struct dpu_fetchdecode *fd, u32 fmt)
 {
-	u32 bits, shift;
+	u32 val, bits, shift;
+	bool is_planar_yuv = false, is_rastermode_yuv422 = false;
+	bool is_yuv422upsamplingmode_interpolate = false;
+	bool is_inputselect_compact = false;
+	bool need_csc = false;
 	int i;
+
+	switch (fmt) {
+	case DRM_FORMAT_YUYV:
+	case DRM_FORMAT_UYVY:
+		is_rastermode_yuv422 = true;
+		is_yuv422upsamplingmode_interpolate = true;
+		need_csc = true;
+		break;
+	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_NV21:
+	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_NV61:
+		is_planar_yuv = true;
+		is_rastermode_yuv422 = true;
+		is_inputselect_compact = true;
+		need_csc = true;
+		break;
+	case DRM_FORMAT_NV24:
+	case DRM_FORMAT_NV42:
+		is_planar_yuv = true;
+		is_yuv422upsamplingmode_interpolate = true;
+		is_inputselect_compact = true;
+		need_csc = true;
+		break;
+	default:
+		break;
+	}
+
+	mutex_lock(&fd->mutex);
+	val = dpu_fd_read(fd, CONTROL);
+	val &= ~YUV422UPSAMPLINGMODE_MASK;
+	val &= ~INPUTSELECT_MASK;
+	val &= ~RASTERMODE_MASK;
+	if (is_yuv422upsamplingmode_interpolate)
+		val |= YUV422UPSAMPLINGMODE(YUV422UPSAMPLINGMODE__INTERPOLATE);
+	else
+		val |= YUV422UPSAMPLINGMODE(YUV422UPSAMPLINGMODE__REPLICATE);
+	if (is_inputselect_compact)
+		val |= INPUTSELECT(INPUTSELECT__COMPPACK);
+	else
+		val |= INPUTSELECT(INPUTSELECT__INACTIVE);
+	if (is_rastermode_yuv422)
+		val |= RASTERMODE(RASTERMODE__YUV422);
+	else
+		val |= RASTERMODE(RASTERMODE__NORMAL);
+	dpu_fd_write(fd, val, CONTROL);
+
+	val = dpu_fd_read(fd, LAYERPROPERTY0);
+	val &= ~YUVCONVERSIONMODE_MASK;
+	if (need_csc)
+		/*
+		 * assuming fetchdecode always ouputs RGB pixel formats
+		 *
+		 * FIXME:
+		 * determine correct standard here - ITU601 or ITU601_FR
+		 * or ITU709
+		 */
+		val |= YUVCONVERSIONMODE(YUVCONVERSIONMODE__ITU601_FR);
+	else
+		val |= YUVCONVERSIONMODE(YUVCONVERSIONMODE__OFF);
+	dpu_fd_write(fd, val, LAYERPROPERTY0);
+	mutex_unlock(&fd->mutex);
 
 	for (i = 0; i < ARRAY_SIZE(dpu_pixel_format_matrix); i++) {
 		if (dpu_pixel_format_matrix[i].pixel_format == fmt) {
 			bits = dpu_pixel_format_matrix[i].bits;
 			shift = dpu_pixel_format_matrix[i].shift;
+
+			if (is_planar_yuv) {
+				bits &= ~(U_BITS_MASK | V_BITS_MASK);
+				shift &= ~(U_SHIFT_MASK | V_SHIFT_MASK);
+			}
 
 			mutex_lock(&fd->mutex);
 			dpu_fd_write(fd, bits, COLORCOMPONENTBITS0);
@@ -261,20 +380,29 @@ void fetchdecode_clipoffset(struct dpu_fetchdecode *fd, unsigned int x,
 }
 EXPORT_SYMBOL_GPL(fetchdecode_clipoffset);
 
-void fetchdecode_layerproperty(struct dpu_fetchdecode *fd, bool enable)
+void fetchdecode_source_buffer_enable(struct dpu_fetchdecode *fd)
 {
 	u32 val;
 
-	if (enable)
-		val = SOURCEBUFFERENABLE;
-	else
-		val = 0;
-
 	mutex_lock(&fd->mutex);
+	val = dpu_fd_read(fd, LAYERPROPERTY0);
+	val |= SOURCEBUFFERENABLE;
 	dpu_fd_write(fd, val, LAYERPROPERTY0);
 	mutex_unlock(&fd->mutex);
 }
-EXPORT_SYMBOL_GPL(fetchdecode_layerproperty);
+EXPORT_SYMBOL_GPL(fetchdecode_source_buffer_enable);
+
+void fetchdecode_source_buffer_disable(struct dpu_fetchdecode *fd)
+{
+	u32 val;
+
+	mutex_lock(&fd->mutex);
+	val = dpu_fd_read(fd, LAYERPROPERTY0);
+	val &= ~SOURCEBUFFERENABLE;
+	dpu_fd_write(fd, val, LAYERPROPERTY0);
+	mutex_unlock(&fd->mutex);
+}
+EXPORT_SYMBOL_GPL(fetchdecode_source_buffer_disable);
 
 bool fetchdecode_is_enabled(struct dpu_fetchdecode *fd)
 {
@@ -438,9 +566,54 @@ EXPORT_SYMBOL_GPL(fetchdecode_to_shdldreq_t);
 
 u32 fetchdecode_get_vproc_mask(struct dpu_fetchdecode *fd)
 {
-	return fd_vproc_cap[fd->id];
+	struct dpu_soc *dpu = fd->dpu;
+	const struct dpu_devtype *devtype = dpu->devtype;
+
+	return devtype->version == DPU_V1 ?
+			fd_vproc_cap_v1[fd->id] : fd_vproc_cap_v2[fd->id];
 }
 EXPORT_SYMBOL_GPL(fetchdecode_get_vproc_mask);
+
+struct dpu_fetcheco *fetchdecode_get_fetcheco(struct dpu_fetchdecode *fd)
+{
+	struct dpu_soc *dpu = fd->dpu;
+
+	switch (fd->id) {
+	case 0:
+	case 1:
+		return dpu->fe_priv[fd->id];
+	case 2:
+	case 3:
+		/* TODO: for DPU v1, add FetchEco2 support */
+		return dpu->fe_priv[fd->id - 2];
+	default:
+		WARN_ON(1);
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+EXPORT_SYMBOL_GPL(fetchdecode_get_fetcheco);
+
+bool fetchdecode_need_fetcheco(struct dpu_fetchdecode *fd, u32 fmt)
+{
+	struct dpu_fetcheco *fe = fetchdecode_get_fetcheco(fd);
+
+	if (IS_ERR_OR_NULL(fe))
+		return false;
+
+	switch (fmt) {
+	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_NV21:
+	case DRM_FORMAT_NV16:
+	case DRM_FORMAT_NV61:
+	case DRM_FORMAT_NV24:
+	case DRM_FORMAT_NV42:
+		return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(fetchdecode_need_fetcheco);
 
 struct dpu_hscaler *fetchdecode_get_hscaler(struct dpu_fetchdecode *fd)
 {
