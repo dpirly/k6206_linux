@@ -621,6 +621,36 @@
 				#power-domain-cells = <0>;
 				power-domains =<&pd_audio>;
 			};
+			pd_mclk_out0: PD_AUD_MCLK_OUT_0 {
+				reg = <SC_R_MCLK_OUT_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_mclk_out1: PD_AUD_MCLK_OUT_1 {
+				reg = <SC_R_MCLK_OUT_1>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_audio_pll0: PD_AUD_AUDIO_PLL_0 {
+				reg = <SC_R_AUDIO_PLL_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_audio_pll1: PD_AUD_AUDIO_PLL_1 {
+				reg = <SC_R_AUDIO_PLL_1>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_audio_clk0: PD_AUD_AUDIO_CLK_0 {
+				reg = <SC_R_AUDIO_CLK_0>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
+			pd_audio_clk1: PD_AUD_AUDIO_CLK_1 {
+				reg = <SC_R_AUDIO_CLK_1>;
+				#power-domain-cells = <0>;
+				power-domains =<&pd_audio>;
+			};
 		};
 
 		pd_dma: PD_DMA {
@@ -1482,8 +1512,12 @@
 		interrupt-controller;
 		interrupt-parent = <&gic>;
 		#interrupt-cells = <2>;
-		clocks = <&clk IMX8QM_HDMI_LIS_IPG_CLK>;
-		clock-names = "ipg";
+		clocks = <&clk IMX8QM_HDMI_DIG_PLL_CLK>,
+				<&clk IMX8QM_HDMI_LIS_IPG_CLK>;
+		clock-names = "pll", "ipg";
+		assigned-clocks =  <&clk IMX8QM_HDMI_DIG_PLL_CLK>,
+				<&clk IMX8QM_HDMI_LIS_IPG_CLK>;
+		assigned-clock-rates = <675000000>, <84000000>;
 		power-domains = <&pd_hdmi>;
 	};
 
@@ -2026,7 +2060,8 @@
 			<&clk IMX8QM_SDHC1_CLK>,
 			<&clk IMX8QM_CLK_DUMMY>;
 		clock-names = "ipg", "per", "ahb";
-		assigned-clock-rates = <400000000>, <200000000>, <0>;
+		assigned-clocks = <&clk IMX8QM_SDHC1_DIV>;
+		assigned-clock-rates = <200000000>;
 		power-domains = <&pd_conn_sdch1>;
 		fsl,tuning-start-tap = <20>;
 		fsl,tuning-step= <2>;
@@ -2042,7 +2077,8 @@
 			<&clk IMX8QM_SDHC2_CLK>,
 			<&clk IMX8QM_CLK_DUMMY>;
 		clock-names = "ipg", "per", "ahb";
-		assigned-clock-rates = <400000000>, <200000000>, <0>;
+		assigned-clocks = <&clk IMX8QM_SDHC2_DIV>;
+		assigned-clock-rates = <200000000>;
 		power-domains = <&pd_conn_sdch2>;
 		status = "disabled";
 	};
@@ -2151,7 +2187,6 @@
 	acm:  acm@59e00000 {
 		compatible = "nxp,imx8qm-acm";
 		reg = <0x0 0x59e00000 0x0 0x1D0000>;
-		power-domains = <&pd_sai0>;
 		status = "disabled";
 	};
 
