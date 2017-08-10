@@ -13,27 +13,32 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
+#include <linux/of_irq.h>
 #include <linux/perf_event.h>
 #include <linux/slab.h>
 
 
-#define COUNTER_CNTL	0x0
-#define COUNTER_READ	0x20
+#define COUNTER_CNTL		0x0
+#define COUNTER_READ		0x20
 
-#define CNTL_OVER	0x1
-#define	CNTL_CLEAR	0x2
-#define CNTL_EN		0x4
+#define CNTL_OVER		0x1
+#define CNTL_CLEAR		0x2
+#define CNTL_EN			0x4
+#define CNTL_EN_MASK		0xFFFFFFFB
+#define CNTL_CLEAR_MASK		0xFFFFFFFD
+#define CNTL_OVER_MASK		0xFFFFFFFE
 
-#define CNTL_CP_SHIFT	16
-#define CNTL_CP_MASK	(0xFF << CNTL_CP_SHIFT)
+#define CNTL_CSV_SHIFT		24
+#define CNTL_CSV_MASK		(0xFF << CNTL_CSV_SHIFT)
 
-#define CNTL_CSV_SHIFT	24
-#define CNTL_CSV_MASK	(0xFF << CNTL_CSV_SHIFT)
+#define EVENT_CYCLES_ID		0
+#define EVENT_CYCLES_COUNTER	0
+#define NUM_COUNTER		4
+#define MAX_EVENT		3
 
-#define NUM_COUNTER	4
-#define MAX_EVENT	3
+#define to_ddr_pmu(p)		container_of(p, struct ddr_pmu, pmu)
 
-#define to_ddr_pmu(p)	container_of(p, struct ddr_pmu, pmu)
+#define DDR_PERF_DEV_NAME	"ddr_perf"
 
 static DEFINE_IDA(ddr_ida);
 
@@ -81,7 +86,9 @@ struct ddr_pmu {
 	cpumask_t cpu;
 	struct	hlist_node node;
 	struct	device *dev;
-	int	e2c_map[NUM_COUNTER];
+	struct perf_event *active_events[NUM_COUNTER];
+	int total_events;
+	bool cycles_active;
 };
 
 static ssize_t ddr_perf_cpumask_show(struct device *dev,
@@ -165,15 +172,13 @@ static u32 ddr_perf_alloc_counter(struct ddr_pmu *pmu, int event)
 {
 	int i;
 
-	if (event == 0)
-		return 0; /* always map cycle event to counter 0 */
+	/* Always map cycle event to counter 0 */
+	if (event == EVENT_CYCLES_ID)
+		return EVENT_CYCLES_COUNTER;
 
-	for (i = 1; i < NUM_COUNTER; i++) {
-		if (pmu->e2c_map[i] == 0) {
-			pmu->e2c_map[i] = event;
+	for (i = 1; i < NUM_COUNTER; i++)
+		if (pmu->active_events[i] == NULL)
 			return i;
-		}
-	}
 
 	return -ENOENT;
 }
@@ -183,7 +188,7 @@ static u32 ddr_perf_free_counter(struct ddr_pmu *pmu, int counter)
 	if (counter < 0 || counter >= NUM_COUNTER)
 		return -ENOENT;
 
-	pmu->e2c_map[counter] = 0;
+	pmu->active_events[counter] = NULL;
 
 	return 0;
 }
@@ -243,19 +248,44 @@ static void ddr_perf_event_update(struct perf_event *event)
 	local64_add(delta, &event->count);
 }
 
+static void ddr_perf_event_enable(struct ddr_pmu *pmu, int config,
+				  int counter, bool enable)
+{
+	u8 reg = counter * 4 + COUNTER_CNTL;
+	int val;
+
+	if (enable) {
+		/* Clear counter, then enable it. */
+		writel(0, pmu->base + reg);
+		val = CNTL_EN | CNTL_CLEAR;
+		val |= (config << CNTL_CSV_SHIFT) & CNTL_CSV_MASK;
+	} else {
+		/* Disable counter */
+		val = readl(pmu->base + reg) & CNTL_EN_MASK;
+	}
+
+	writel(val, pmu->base + reg);
+
+	if (config == EVENT_CYCLES_ID)
+		pmu->cycles_active = enable;
+}
+
 static void ddr_perf_event_start(struct perf_event *event, int flags)
 {
 	struct ddr_pmu *pmu = to_ddr_pmu(event->pmu);
 	struct hw_perf_event *hwc = &event->hw;
-	int reg;
 	int counter = hwc->idx;
 
 	local64_set(&hwc->prev_count, 0);
 
-	writel(0, pmu->base + counter * 4 + COUNTER_CNTL);
-	reg = CNTL_EN | CNTL_CLEAR;
-	reg |= (event->attr.config << CNTL_CSV_SHIFT) & CNTL_CSV_MASK;
-	writel(reg, pmu->base + counter * 4 + COUNTER_CNTL);
+	ddr_perf_event_enable(pmu, event->attr.config, counter, true);
+	/*
+	 * If the cycles counter wasn't explicitly selected,
+	 * we will enable it now.
+	 */
+	if (counter > 0 && !pmu->cycles_active)
+		ddr_perf_event_enable(pmu, EVENT_CYCLES_ID,
+				      EVENT_CYCLES_COUNTER, true);
 }
 
 static int ddr_perf_event_add(struct perf_event *event, int flags)
@@ -271,6 +301,8 @@ static int ddr_perf_event_add(struct perf_event *event, int flags)
 		return -EOPNOTSUPP;
 	}
 
+	pmu->active_events[counter] = event;
+	pmu->total_events++;
 	hwc->idx = counter;
 
 	if (flags & PERF_EF_START)
@@ -287,7 +319,8 @@ static void ddr_perf_event_stop(struct perf_event *event, int flags)
 	struct hw_perf_event *hwc = &event->hw;
 	int counter = hwc->idx;
 
-	writel(0, pmu->base + counter * 4 + COUNTER_CNTL);
+	ddr_perf_event_enable(pmu, event->attr.config, counter, false);
+	ddr_perf_event_update(event);
 }
 
 static void ddr_perf_event_del(struct perf_event *event, int flags)
@@ -299,7 +332,13 @@ static void ddr_perf_event_del(struct perf_event *event, int flags)
 	ddr_perf_event_stop(event, PERF_EF_UPDATE);
 
 	ddr_perf_free_counter(pmu, counter);
+	pmu->total_events--;
 	hwc->idx = -1;
+
+	/* If all events have stopped, stop the cycles counter as well */
+	if ((pmu->total_events == 0) && pmu->cycles_active)
+		ddr_perf_event_enable(pmu, EVENT_CYCLES_ID,
+				      EVENT_CYCLES_COUNTER, false);
 }
 
 static int ddr_perf_init(struct ddr_pmu *pmu, void __iomem *base,
@@ -323,14 +362,57 @@ static int ddr_perf_init(struct ddr_pmu *pmu, void __iomem *base,
 	return ida_simple_get(&ddr_ida, 0, 0, GFP_KERNEL);
 }
 
+static irqreturn_t ddr_perf_irq_handler(int irq, void *p)
+{
+	int i;
+	u8 reg;
+	int val;
+	int counter;
+	struct ddr_pmu *pmu = (struct ddr_pmu *) p;
+	struct perf_event *event;
+
+	/*
+	 * The cycles counter has overflowed. Update all of the local counter
+	 * values, then reset the cycles counter, so the others can continue
+	 * counting.
+	 */
+	for (i = 0; i <= pmu->total_events; i++) {
+		if (pmu->active_events[i] != NULL) {
+			event = pmu->active_events[i];
+			counter = event->hw.idx;
+			reg = counter * 4 + COUNTER_CNTL;
+			val = readl(pmu->base + reg);
+			ddr_perf_event_update(event);
+			if (val & CNTL_OVER) {
+				/* Clear counter, then re-enable it. */
+				ddr_perf_event_enable(pmu, event->attr.config,
+						      counter, true);
+				/* Update event again to reset prev_count */
+				ddr_perf_event_update(event);
+			}
+		}
+	}
+
+	/*
+	 * Reset the cycles counter regardless if it was explicitly
+	 * enabled or not.
+	 */
+	ddr_perf_event_enable(pmu, EVENT_CYCLES_ID,
+			      EVENT_CYCLES_COUNTER, true);
+
+	return IRQ_HANDLED;
+}
+
 static int ddr_perf_probe(struct platform_device *pdev)
 {
 	struct ddr_pmu *pmu;
+	struct device_node *np;
 	void __iomem *base;
 	struct resource *iomem;
 	char *name;
 	int num;
 	int ret;
+	u32 irq;
 
 	iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	base = devm_ioremap_resource(&pdev->dev, iomem);
@@ -338,6 +420,8 @@ static int ddr_perf_probe(struct platform_device *pdev)
 		ret = PTR_ERR(base);
 		return ret;
 	}
+
+	np = pdev->dev.of_node;
 
 	pmu = kzalloc(sizeof(*pmu), GFP_KERNEL);
 	if (!pmu)
@@ -351,8 +435,27 @@ static int ddr_perf_probe(struct platform_device *pdev)
 	if (ret)
 		goto ddr_perf_err;
 
+	/* Request irq */
+	irq = of_irq_get(np, 0);
+	if (irq < 0) {
+		pr_err("Failed to get irq: %d", irq);
+		goto ddr_perf_err;
+	}
+
+	ret = devm_request_threaded_irq(&pdev->dev, irq,
+					ddr_perf_irq_handler, NULL,
+					IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+					DDR_PERF_DEV_NAME,
+					pmu);
+	if (ret < 0) {
+		pr_err("Request irq failed: %d", ret);
+		goto ddr_perf_irq_err;
+	}
+
 	return 0;
 
+ddr_perf_irq_err:
+	perf_pmu_unregister(&(pmu->pmu));
 ddr_perf_err:
 	pr_warn("i.MX8 DDR Perf PMU failed (%d), disabled\n", ret);
 	kfree(pmu);

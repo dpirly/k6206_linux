@@ -106,6 +106,9 @@ static const char *imx8mq_ahb_sels[] = {"osc_25m", "sys1_pll_133m", "sys1_pll_80
 static const char *imx8mq_audio_ahb_sels[] = {"osc_25m", "sys2_pll_500m", "sys1_pll_800m", "sys2_pll_1000m",
 						  "sys2_pll_166m", "sys3_pll2_out", "audio_pll1_out", "video_pll1_out", };
 
+static const char *imx8mq_dsi_ahb_sels[] = {"osc_25m", "sys2_pll_100m", "sys1_pll_80m", "sys1_pll_800m",
+                                            "sys2_pll_1000m", "sys3_pll2_out", "clk_ext3", "audio_pll2_out"};
+
 static const char *imx8mq_dram_alt_sels[] = {"osc_25m", "sys1_pll_800m", "sys1_pll_100m", "sys2_pll_500m",
 					     "sys2_pll_250m", "sys1_pll_400m", "audio_pll1_out", "sys1_pll_266m", };
 
@@ -544,6 +547,7 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 	clks[IMX8MQ_CLK_DSI_PHY_REF_SRC] = imx_clk_mux2("dsi_phy_ref_src", base + 0xbb80, 24, 3, imx8mq_dsi_phy_sels, ARRAY_SIZE(imx8mq_dsi_phy_sels));
 	clks[IMX8MQ_CLK_DSI_DBI_SRC] = imx_clk_mux2("dsi_dbi_src", base + 0xbc00, 24, 3, imx8mq_dsi_dbi_sels, ARRAY_SIZE(imx8mq_dsi_dbi_sels));
 	clks[IMX8MQ_CLK_DSI_ESC_SRC] = imx_clk_mux2("dsi_esc_src", base + 0xbc80, 24, 3, imx8mq_dsi_esc_sels, ARRAY_SIZE(imx8mq_dsi_esc_sels));
+	clks[IMX8MQ_CLK_DSI_AHB_SRC] = imx_clk_mux2("dsi_ahb_src", base + 0x9200, 24, 3, imx8mq_dsi_ahb_sels, ARRAY_SIZE(imx8mq_dsi_ahb_sels));
 	clks[IMX8MQ_CLK_CSI1_CORE_SRC] = imx_clk_mux2("csi1_core_src", base + 0xbd00, 24, 3, imx8mq_csi1_core_sels, ARRAY_SIZE(imx8mq_csi1_core_sels));
 	clks[IMX8MQ_CLK_CSI1_PHY_REF_SRC] = imx_clk_mux2("csi1_phy_ref_src", base + 0xbd80, 24, 3, imx8mq_csi1_phy_sels, ARRAY_SIZE(imx8mq_csi1_phy_sels));
 	clks[IMX8MQ_CLK_CSI1_ESC_SRC] = imx_clk_mux2("csi1_esc_src", base + 0xbe00, 24, 3, imx8mq_csi1_esc_sels, ARRAY_SIZE(imx8mq_csi1_esc_sels));
@@ -604,6 +608,7 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 	clks[IMX8MQ_CLK_DSI_PHY_REF_CG] = imx_clk_gate3("dsi_phy_ref_cg", "dsi_phy_ref_src", base + 0xbb80, 28);
 	clks[IMX8MQ_CLK_DSI_DBI_CG] = imx_clk_gate3("dsi_dbi_cg", "dsi_dbi_src", base + 0xbc00, 28);
 	clks[IMX8MQ_CLK_DSI_ESC_CG] = imx_clk_gate3("dsi_esc_cg", "dsi_esc_src", base + 0xbc80, 28);
+	clks[IMX8MQ_CLK_DSI_AHB_CG] = imx_clk_gate3("dsi_ahb_cg", "dsi_ahb_src", base + 0x9200, 28);
 	clks[IMX8MQ_CLK_CSI1_CORE_CG] = imx_clk_gate3("csi1_core_cg", "csi1_core_src", base + 0xbd00, 28);
 	clks[IMX8MQ_CLK_CSI1_PHY_REF_CG] = imx_clk_gate3("csi1_phy_ref_cg", "csi1_phy_ref_src", base + 0xbd80, 28);
 	clks[IMX8MQ_CLK_CSI1_ESC_CG] = imx_clk_gate3("csi1_esc_cg", "csi1_esc_src", base + 0xbe00, 28);
@@ -664,6 +669,7 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 	clks[IMX8MQ_CLK_DSI_PHY_REF_PRE_DIV] = imx_clk_divider2("dsi_phy_ref_pre_div", "dsi_phy_ref_cg", base + 0xbb80, 16, 3);
 	clks[IMX8MQ_CLK_DSI_DBI_PRE_DIV] = imx_clk_divider2("dsi_dbi_pre_div", "dsi_dbi_cg", base + 0xbc00, 16, 3);
 	clks[IMX8MQ_CLK_DSI_ESC_PRE_DIV] = imx_clk_divider2("dsi_esc_pre_div", "dsi_esc_cg", base + 0xbc80, 16, 3);
+	clks[IMX8MQ_CLK_DSI_AHB_PRE_DIV] = imx_clk_divider2("dsi_ahb_pre_div", "dsi_ahb_cg", base + 0x9200, 16, 3);
 	clks[IMX8MQ_CLK_CSI1_CORE_PRE_DIV] = imx_clk_divider2("csi1_core_pre_div", "csi1_core_cg", base + 0xbd00, 16, 3);
 	clks[IMX8MQ_CLK_CSI1_PHY_REF_PRE_DIV] = imx_clk_divider2("csi1_phy_ref_pre_div", "csi1_phy_ref_cg", base + 0xbd80, 16, 3);
 	clks[IMX8MQ_CLK_CSI1_ESC_PRE_DIV] = imx_clk_divider2("csi1_esc_pre_div", "csi1_esc_cg", base + 0xbe00, 16, 3);
@@ -675,65 +681,67 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 	clks[IMX8MQ_CLK_PCIE2_AUX_PRE_DIV] = imx_clk_divider2("pcie2_aux_pre_div", "pcie2_aux_cg", base + 0xc100, 16, 3);
 	clks[IMX8MQ_CLK_ECSPI3_PRE_DIV] = imx_clk_divider2("ecspi3_pre_div", "ecspi3_cg", base + 0xc180, 16, 3);
 
-	clks[IMX8MQ_CLK_DRAM_ALT_DIV] = imx_clk_divider2("dram_alt_div", "dram_alt_pre_div", base + 0xa000, 0, 3);
-	clks[IMX8MQ_CLK_DRAM_APB_DIV] = imx_clk_divider2("dram_apb_div", "dram_apb_pre_div", base + 0xa080, 0, 3);
-	clks[IMX8MQ_CLK_VPU_G1_DIV] = imx_clk_divider2("vpu_g1_div", "vpu_g1_pre_div", base + 0xa100, 0, 3);
-	clks[IMX8MQ_CLK_VPU_G2_DIV] = imx_clk_divider2("vpu_g2_div", "vpu_g2_pre_div", base + 0xa180, 0, 3);
-	clks[IMX8MQ_CLK_DISP_DTRC_DIV] = imx_clk_divider2("disp_dtrc_div", "disp_dtrc_pre_div", base + 0xa200, 0, 3);
-	clks[IMX8MQ_CLK_DISP_DC8000_DIV] = imx_clk_divider2("disp_dc8000_div", "disp_dc8000_pre_div", base + 0xa280, 0, 3);
-	clks[IMX8MQ_CLK_PCIE1_CTRL_DIV] = imx_clk_divider2("pcie1_ctrl_div", "pcie1_ctrl_pre_div", base + 0xa300, 0, 3);
-	clks[IMX8MQ_CLK_PCIE1_PHY_DIV] = imx_clk_divider2("pcie1_phy_div", "pcie1_phy_pre_div", base + 0xa380, 0, 3);
-	clks[IMX8MQ_CLK_PCIE1_AUX_DIV] = imx_clk_divider2("pcie1_aux_div", "pcie1_aux_pre_div", base + 0xa400, 0, 3);
-	clks[IMX8MQ_CLK_DC_PIXEL_DIV] = imx_clk_divider2("dc_pixel_div", "dc_pixel_pre_div", base + 0xa480, 0, 3);
-	clks[IMX8MQ_CLK_LCDIF_PIXEL_DIV] = imx_clk_divider2("lcdif_pixel_div", "lcdif_pixel_pre_div", base + 0xa500, 0, 3);
-	clks[IMX8MQ_CLK_SAI1_DIV] = imx_clk_divider2("sai1_div", "sai1_pre_div", base + 0xa580, 0, 3);
-	clks[IMX8MQ_CLK_SAI2_DIV] = imx_clk_divider2("sai2_div", "sai2_pre_div", base + 0xa600, 0, 3);
-	clks[IMX8MQ_CLK_SAI3_DIV] = imx_clk_divider2("sai3_div", "sai3_pre_div", base + 0xa680, 0, 3);
-	clks[IMX8MQ_CLK_SAI4_DIV] = imx_clk_divider2("sai4_div", "sai4_pre_div", base + 0xa700, 0, 3);
-	clks[IMX8MQ_CLK_SAI5_DIV] = imx_clk_divider2("sai5_div", "sai5_pre_div", base + 0xa780, 0, 3);
-	clks[IMX8MQ_CLK_SAI6_DIV] = imx_clk_divider2("sai6_div", "sai6_pre_div", base + 0xa800, 0, 3);
-	clks[IMX8MQ_CLK_SPDIF1_DIV] = imx_clk_divider2("spdif1_div", "spdif1_pre_div", base + 0xa880, 0, 3);
-	clks[IMX8MQ_CLK_SPDIF2_DIV] = imx_clk_divider2("spdif2_div", "spdif2_pre_div", base + 0xa900, 0, 3);
-	clks[IMX8MQ_CLK_ENET_REF_DIV] = imx_clk_divider2("enet_ref_div", "enet_ref_pre_div", base + 0xa980, 0, 3);
-	clks[IMX8MQ_CLK_ENET_TIMER_DIV] = imx_clk_divider2("enet_timer_div", "enet_timer_pre_div", base + 0xaa00, 0, 3);
-	clks[IMX8MQ_CLK_ENET_PHY_REF_DIV] = imx_clk_divider2("enet_phy_div", "enet_phy_pre_div", base + 0xaa80, 0, 3);
-	clks[IMX8MQ_CLK_NAND_DIV] = imx_clk_divider2("nand_div", "nand_phy_pre_div", base + 0xab00, 0, 3);
-	clks[IMX8MQ_CLK_QSPI_DIV] = imx_clk_divider2("qspi_div", "qspi_phy_pre_div", base + 0xab80, 0, 3);
-	clks[IMX8MQ_CLK_USDHC1_DIV] = imx_clk_divider2("usdhc1_div", "usdhc1_pre_div", base + 0xac00, 0, 3);
-	clks[IMX8MQ_CLK_USDHC2_DIV] = imx_clk_divider2("usdhc2_div", "usdhc2_pre_div", base + 0xac80, 0, 3);
-	clks[IMX8MQ_CLK_I2C1_DIV] = imx_clk_divider2("i2c1_div", "i2c1_pre_div", base + 0xad00, 0, 3);
-	clks[IMX8MQ_CLK_I2C2_DIV] = imx_clk_divider2("i2c2_div", "i2c2_pre_div", base + 0xad80, 0, 3);
-	clks[IMX8MQ_CLK_I2C3_DIV] = imx_clk_divider2("i2c3_div", "i2c3_pre_div", base + 0xae00, 0, 3);
-	clks[IMX8MQ_CLK_I2C4_DIV] = imx_clk_divider2("i2c4_div", "i2c4_pre_div", base + 0xae80, 0, 3);
-	clks[IMX8MQ_CLK_UART1_DIV] = imx_clk_divider2("uart1_div", "uart1_pre_div", base + 0xaf00, 0, 3);
-	clks[IMX8MQ_CLK_UART2_DIV] = imx_clk_divider2("uart2_div", "uart2_pre_div", base + 0xaf80, 0, 3);
-	clks[IMX8MQ_CLK_UART3_DIV] = imx_clk_divider2("uart3_div", "uart3_pre_div", base + 0xb000, 0, 3);
-	clks[IMX8MQ_CLK_UART4_DIV] = imx_clk_divider2("uart4_div", "uart4_pre_div", base + 0xb080, 0, 3);
-	clks[IMX8MQ_CLK_USB_CORE_REF_DIV] = imx_clk_divider2("usb_core_ref_div", "usb_core_ref_pre_div", base + 0xb100, 0, 3);
-	clks[IMX8MQ_CLK_USB_PHY_REF_DIV] = imx_clk_divider2("usb_phy_ref_div", "usb_phy_ref_pre_div", base + 0xb180, 0, 3);
-	clks[IMX8MQ_CLK_ECSPI1_DIV] = imx_clk_divider2("ecspi1_div", "ecspi1_pre_div", base + 0xb280, 0, 3);
-	clks[IMX8MQ_CLK_ECSPI2_DIV] = imx_clk_divider2("ecspi2_div", "ecspi2_pre_div", base + 0xb300, 0, 3);
-	clks[IMX8MQ_CLK_PWM1_DIV] = imx_clk_divider2("pwm1_div", "pwm1_pre_div", base + 0xb380, 0, 3);
-	clks[IMX8MQ_CLK_PWM2_DIV] = imx_clk_divider2("pwm2_div", "pwm2_pre_div", base + 0xb400, 0, 3);
-	clks[IMX8MQ_CLK_PWM3_DIV] = imx_clk_divider2("pwm3_div", "pwm3_pre_div", base + 0xb480, 0, 3);
-	clks[IMX8MQ_CLK_PWM4_DIV] = imx_clk_divider2("pwm4_div", "pwm4_pre_div", base + 0xb500, 0, 3);
-	clks[IMX8MQ_CLK_GPT1_DIV] = imx_clk_divider2("gpt1_div", "gpt1_pre_div", base + 0xb580, 0, 3);
-	clks[IMX8MQ_CLK_WDOG_DIV] = imx_clk_divider2("wdog_div", "wdog_pre_div", base + 0xb900, 0, 3);
-	clks[IMX8MQ_CLK_WRCLK_DIV] = imx_clk_divider2("wrclk_div", "wrclk_pre_div", base + 0xb980, 0, 3);
-	clks[IMX8MQ_CLK_DSI_CORE_DIV] = imx_clk_divider2("dsi_core_div", "dsi_core_pre_div", base + 0xbb00, 0, 3);
-	clks[IMX8MQ_CLK_DSI_PHY_REF_DIV] = imx_clk_divider2("dsi_phy_ref_div", "dsi_phy_ref_pre_div", base + 0xbb80, 0, 3);
-	clks[IMX8MQ_CLK_DSI_DBI_DIV] = imx_clk_divider2("dsi_dbi_div", "dsi_dbi_pre_div", base + 0xbc00, 0, 3);
-	clks[IMX8MQ_CLK_DSI_ESC_DIV] = imx_clk_divider2("dsi_esc_div", "dsi_esc_pre_div", base + 0xbc80, 0, 3);
-	clks[IMX8MQ_CLK_CSI1_CORE_DIV] = imx_clk_divider2("csi1_core_div", "csi1_core_pre_div", base + 0xbd00, 0, 3);
-	clks[IMX8MQ_CLK_CSI1_PHY_REF_DIV] = imx_clk_divider2("csi1_phy_ref_div", "csi1_phy_ref_pre_div", base + 0xbd80, 0, 3);
-	clks[IMX8MQ_CLK_CSI1_ESC_DIV] = imx_clk_divider2("csi1_esc_div", "csi1_esc_pre_div", base + 0xbe00, 0, 3);
-	clks[IMX8MQ_CLK_CSI2_CORE_DIV] = imx_clk_divider2("csi2_core_div", "csi2_core_pre_div", base + 0xbe80, 0, 3);
-	clks[IMX8MQ_CLK_CSI2_PHY_REF_DIV] = imx_clk_divider2("csi2_phy_ref_div", "csi2_phy_ref_pre_div", base + 0xbf00, 0, 3);
-	clks[IMX8MQ_CLK_CSI2_ESC_DIV] = imx_clk_divider2("csi2_esc_div", "csi2_esc_pre_div", base + 0xbf80, 0, 3);
-	clks[IMX8MQ_CLK_PCIE2_CTRL_DIV] = imx_clk_divider2("pcie2_ctrl_div", "pcie2_ctrl_pre_div", base + 0xc000, 0, 3);
-	clks[IMX8MQ_CLK_PCIE2_PHY_DIV] = imx_clk_divider2("pcie2_phy_div", "pcie2_phy_pre_div", base + 0xc080, 0, 3);
-	clks[IMX8MQ_CLK_PCIE2_AUX_DIV] = imx_clk_divider2("pcie2_aux_div", "pcie2_aux_pre_div", base + 0xc100, 0, 3);
-	clks[IMX8MQ_CLK_ECSPI3_DIV] = imx_clk_divider2("ecspi3_div", "ecspi3_pre_div", base + 0xc180, 0, 3);
+	clks[IMX8MQ_CLK_DRAM_ALT_DIV] = imx_clk_divider2("dram_alt_div", "dram_alt_pre_div", base + 0xa000, 0, 6);
+	clks[IMX8MQ_CLK_DRAM_APB_DIV] = imx_clk_divider2("dram_apb_div", "dram_apb_pre_div", base + 0xa080, 0, 6);
+	clks[IMX8MQ_CLK_VPU_G1_DIV] = imx_clk_divider2("vpu_g1_div", "vpu_g1_pre_div", base + 0xa100, 0, 6);
+	clks[IMX8MQ_CLK_VPU_G2_DIV] = imx_clk_divider2("vpu_g2_div", "vpu_g2_pre_div", base + 0xa180, 0, 6);
+	clks[IMX8MQ_CLK_DISP_DTRC_DIV] = imx_clk_divider2("disp_dtrc_div", "disp_dtrc_pre_div", base + 0xa200, 0, 6);
+	clks[IMX8MQ_CLK_DISP_DC8000_DIV] = imx_clk_divider2("disp_dc8000_div", "disp_dc8000_pre_div", base + 0xa280, 0, 6);
+	clks[IMX8MQ_CLK_PCIE1_CTRL_DIV] = imx_clk_divider2("pcie1_ctrl_div", "pcie1_ctrl_pre_div", base + 0xa300, 0, 6);
+	clks[IMX8MQ_CLK_PCIE1_PHY_DIV] = imx_clk_divider2("pcie1_phy_div", "pcie1_phy_pre_div", base + 0xa380, 0, 6);
+	clks[IMX8MQ_CLK_PCIE1_AUX_DIV] = imx_clk_divider2("pcie1_aux_div", "pcie1_aux_pre_div", base + 0xa400, 0, 6);
+	clks[IMX8MQ_CLK_DC_PIXEL_DIV] = imx_clk_divider2("dc_pixel_div", "dc_pixel_pre_div", base + 0xa480, 0, 6);
+	clks[IMX8MQ_CLK_LCDIF_PIXEL_DIV] = imx_clk_divider2("lcdif_pixel_div", "lcdif_pixel_pre_div", base + 0xa500, 0, 6);
+	clks[IMX8MQ_CLK_SAI1_DIV] = imx_clk_divider2("sai1_div", "sai1_pre_div", base + 0xa580, 0, 6);
+	clks[IMX8MQ_CLK_SAI2_DIV] = imx_clk_divider2("sai2_div", "sai2_pre_div", base + 0xa600, 0, 6);
+	clks[IMX8MQ_CLK_SAI3_DIV] = imx_clk_divider2("sai3_div", "sai3_pre_div", base + 0xa680, 0, 6);
+	clks[IMX8MQ_CLK_SAI4_DIV] = imx_clk_divider2("sai4_div", "sai4_pre_div", base + 0xa700, 0, 6);
+	clks[IMX8MQ_CLK_SAI5_DIV] = imx_clk_divider2("sai5_div", "sai5_pre_div", base + 0xa780, 0, 6);
+	clks[IMX8MQ_CLK_SAI6_DIV] = imx_clk_divider2("sai6_div", "sai6_pre_div", base + 0xa800, 0, 6);
+	clks[IMX8MQ_CLK_SPDIF1_DIV] = imx_clk_divider2("spdif1_div", "spdif1_pre_div", base + 0xa880, 0, 6);
+	clks[IMX8MQ_CLK_SPDIF2_DIV] = imx_clk_divider2("spdif2_div", "spdif2_pre_div", base + 0xa900, 0, 6);
+	clks[IMX8MQ_CLK_ENET_REF_DIV] = imx_clk_divider2("enet_ref_div", "enet_ref_pre_div", base + 0xa980, 0, 6);
+	clks[IMX8MQ_CLK_ENET_TIMER_DIV] = imx_clk_divider2("enet_timer_div", "enet_timer_pre_div", base + 0xaa00, 0, 6);
+	clks[IMX8MQ_CLK_ENET_PHY_REF_DIV] = imx_clk_divider2("enet_phy_div", "enet_phy_pre_div", base + 0xaa80, 0, 6);
+	clks[IMX8MQ_CLK_NAND_DIV] = imx_clk_divider2("nand_div", "nand_phy_pre_div", base + 0xab00, 0, 6);
+	clks[IMX8MQ_CLK_QSPI_DIV] = imx_clk_divider2("qspi_div", "qspi_phy_pre_div", base + 0xab80, 0, 6);
+	clks[IMX8MQ_CLK_USDHC1_DIV] = imx_clk_divider2("usdhc1_div", "usdhc1_pre_div", base + 0xac00, 0, 6);
+	clks[IMX8MQ_CLK_USDHC2_DIV] = imx_clk_divider2("usdhc2_div", "usdhc2_pre_div", base + 0xac80, 0, 6);
+	clks[IMX8MQ_CLK_I2C1_DIV] = imx_clk_divider2("i2c1_div", "i2c1_pre_div", base + 0xad00, 0, 6);
+	clks[IMX8MQ_CLK_I2C2_DIV] = imx_clk_divider2("i2c2_div", "i2c2_pre_div", base + 0xad80, 0, 6);
+	clks[IMX8MQ_CLK_I2C3_DIV] = imx_clk_divider2("i2c3_div", "i2c3_pre_div", base + 0xae00, 0, 6);
+	clks[IMX8MQ_CLK_I2C4_DIV] = imx_clk_divider2("i2c4_div", "i2c4_pre_div", base + 0xae80, 0, 6);
+	clks[IMX8MQ_CLK_UART1_DIV] = imx_clk_divider2("uart1_div", "uart1_pre_div", base + 0xaf00, 0, 6);
+	clks[IMX8MQ_CLK_UART2_DIV] = imx_clk_divider2("uart2_div", "uart2_pre_div", base + 0xaf80, 0, 6);
+	clks[IMX8MQ_CLK_UART3_DIV] = imx_clk_divider2("uart3_div", "uart3_pre_div", base + 0xb000, 0, 6);
+	clks[IMX8MQ_CLK_UART4_DIV] = imx_clk_divider2("uart4_div", "uart4_pre_div", base + 0xb080, 0, 6);
+	clks[IMX8MQ_CLK_USB_CORE_REF_DIV] = imx_clk_divider2("usb_core_ref_div", "usb_core_ref_pre_div", base + 0xb100, 0, 6);
+	clks[IMX8MQ_CLK_USB_PHY_REF_DIV] = imx_clk_divider2("usb_phy_ref_div", "usb_phy_ref_pre_div", base + 0xb180, 0, 6);
+	clks[IMX8MQ_CLK_ECSPI1_DIV] = imx_clk_divider2("ecspi1_div", "ecspi1_pre_div", base + 0xb280, 0, 6);
+	clks[IMX8MQ_CLK_ECSPI2_DIV] = imx_clk_divider2("ecspi2_div", "ecspi2_pre_div", base + 0xb300, 0, 6);
+	clks[IMX8MQ_CLK_PWM1_DIV] = imx_clk_divider2("pwm1_div", "pwm1_pre_div", base + 0xb380, 0, 6);
+	clks[IMX8MQ_CLK_PWM2_DIV] = imx_clk_divider2("pwm2_div", "pwm2_pre_div", base + 0xb400, 0, 6);
+	clks[IMX8MQ_CLK_PWM3_DIV] = imx_clk_divider2("pwm3_div", "pwm3_pre_div", base + 0xb480, 0, 6);
+	clks[IMX8MQ_CLK_PWM4_DIV] = imx_clk_divider2("pwm4_div", "pwm4_pre_div", base + 0xb500, 0, 6);
+	clks[IMX8MQ_CLK_GPT1_DIV] = imx_clk_divider2("gpt1_div", "gpt1_pre_div", base + 0xb580, 0, 6);
+	clks[IMX8MQ_CLK_WDOG_DIV] = imx_clk_divider2("wdog_div", "wdog_pre_div", base + 0xb900, 0, 6);
+	clks[IMX8MQ_CLK_WRCLK_DIV] = imx_clk_divider2("wrclk_div", "wrclk_pre_div", base + 0xb980, 0, 6);
+	clks[IMX8MQ_CLK_DSI_CORE_DIV] = imx_clk_divider2("dsi_core_div", "dsi_core_pre_div", base + 0xbb00, 0, 6);
+	clks[IMX8MQ_CLK_DSI_PHY_REF_DIV] = imx_clk_divider2("dsi_phy_ref_div", "dsi_phy_ref_pre_div", base + 0xbb80, 0, 6);
+	clks[IMX8MQ_CLK_DSI_DBI_DIV] = imx_clk_divider2("dsi_dbi_div", "dsi_dbi_pre_div", base + 0xbc00, 0, 6);
+	clks[IMX8MQ_CLK_DSI_ESC_DIV] = imx_clk_divider2("dsi_esc_div", "dsi_esc_pre_div", base + 0xbc80, 0, 6);
+	clks[IMX8MQ_CLK_DSI_AHB_DIV] = imx_clk_divider2("dsi_ahb_div", "dsi_ahb_pre_div", base + 0x9200, 0, 6);
+	clks[IMX8MQ_CLK_DSI_IPG_DIV] = imx_clk_divider2("dsi_ipg_div", "dsi_ahb_div", base + 0x9280, 0, 6);
+	clks[IMX8MQ_CLK_CSI1_CORE_DIV] = imx_clk_divider2("csi1_core_div", "csi1_core_pre_div", base + 0xbd00, 0, 6);
+	clks[IMX8MQ_CLK_CSI1_PHY_REF_DIV] = imx_clk_divider2("csi1_phy_ref_div", "csi1_phy_ref_pre_div", base + 0xbd80, 0, 6);
+	clks[IMX8MQ_CLK_CSI1_ESC_DIV] = imx_clk_divider2("csi1_esc_div", "csi1_esc_pre_div", base + 0xbe00, 0, 6);
+	clks[IMX8MQ_CLK_CSI2_CORE_DIV] = imx_clk_divider2("csi2_core_div", "csi2_core_pre_div", base + 0xbe80, 0, 6);
+	clks[IMX8MQ_CLK_CSI2_PHY_REF_DIV] = imx_clk_divider2("csi2_phy_ref_div", "csi2_phy_ref_pre_div", base + 0xbf00, 0, 6);
+	clks[IMX8MQ_CLK_CSI2_ESC_DIV] = imx_clk_divider2("csi2_esc_div", "csi2_esc_pre_div", base + 0xbf80, 0, 6);
+	clks[IMX8MQ_CLK_PCIE2_CTRL_DIV] = imx_clk_divider2("pcie2_ctrl_div", "pcie2_ctrl_pre_div", base + 0xc000, 0, 6);
+	clks[IMX8MQ_CLK_PCIE2_PHY_DIV] = imx_clk_divider2("pcie2_phy_div", "pcie2_phy_pre_div", base + 0xc080, 0, 6);
+	clks[IMX8MQ_CLK_PCIE2_AUX_DIV] = imx_clk_divider2("pcie2_aux_div", "pcie2_aux_pre_div", base + 0xc100, 0, 6);
+	clks[IMX8MQ_CLK_ECSPI3_DIV] = imx_clk_divider2("ecspi3_div", "ecspi3_pre_div", base + 0xc180, 0, 6);
 
 	/*FIXME, the doc is not ready now */
 	clks[IMX8MQ_CLK_ECSPI1_ROOT] = imx_clk_gate4("ecspi1_root_clk", "ecspi1_div", base + 0x4070, 0);
@@ -776,7 +784,7 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 	clks[IMX8MQ_CLK_USDHC2_ROOT] = imx_clk_gate4("usdhc2_root_clk", "usdhc2_div", base + 0x4520, 0);
 	clks[IMX8MQ_CLK_WDOG1_ROOT] = imx_clk_gate4("wdog1_root_clk", "wdog_div", base + 0x4530, 0);
 	clks[IMX8MQ_CLK_WDOG2_ROOT] = imx_clk_gate4("wdog2_root_clk", "wdog_div", base + 0x4540, 0);
-	clks[IMX8MQ_CLK_VPU_ROOT] = imx_clk_gate4("vpu_root_clk", "vpu_div", base + 0x4550, 0);
+	clks[IMX8MQ_CLK_WDOG3_ROOT] = imx_clk_gate4("wdog3_root_clk", "wdog_div", base + 0x4550, 0);
 	clks[IMX8MQ_CLK_VPU_G1_ROOT] = imx_clk_gate4("vpu_g1_root_clk", "vpu_g1_div", base + 0x4560, 0);
 	clks[IMX8MQ_CLK_GPU_ROOT] = imx_clk_gate4("gpu_root_clk", "gpu_core_div", base + 0x4570, 0);
 	clks[IMX8MQ_CLK_VPU_G2_ROOT] = imx_clk_gate4("vpu_g2_root_clk", "vpu_g2_div", base + 0x45a0, 0);
@@ -803,11 +811,20 @@ static void __init imx8mq_clocks_init(struct device_node *ccm_node)
 		clk_prepare_enable(clks[clks_init_on[i]]);
 
 	clk_set_parent(clks[IMX8MQ_CLK_AHB_SRC], clks[IMX8MQ_SYS1_PLL_133M]);
-	clk_set_parent(clks[IMX8MQ_CLK_AUDIO_AHB_SRC], clks[IMX8MQ_SYS2_PLL_1000M]);
-	clk_set_rate(clks[IMX8MQ_CLK_AUDIO_AHB_DIV], 500000000);
+	clk_set_parent(clks[IMX8MQ_CLK_AUDIO_AHB_SRC], clks[IMX8MQ_SYS2_PLL_500M]);
+
+	/* config video_pll1 clock */
+	clk_set_parent(clks[IMX8MQ_VIDEO_PLL1_REF_SEL], clks[IMX8MQ_CLK_27M]);
+	clk_set_rate(clks[IMX8MQ_VIDEO_PLL1], 593999999);
 
 	/* increase NOC clock to achieve best DDR access performance */
 	clk_set_rate(clks[IMX8MQ_CLK_NOC_DIV], clk_get_rate(clks[IMX8MQ_SYS1_PLL_800M]));
+
+	/* set pcie root's parent clk source */
+	clk_set_parent(clks[IMX8MQ_CLK_PCIE1_CTRL_SRC], clks[IMX8MQ_SYS2_PLL_250M]);
+	clk_set_parent(clks[IMX8MQ_CLK_PCIE1_PHY_SRC], clks[IMX8MQ_SYS2_PLL_100M]);
+	clk_set_parent(clks[IMX8MQ_CLK_PCIE2_CTRL_SRC], clks[IMX8MQ_SYS2_PLL_250M]);
+	clk_set_parent(clks[IMX8MQ_CLK_PCIE2_PHY_SRC], clks[IMX8MQ_SYS2_PLL_100M]);
 
 	pr_info("i.MX8MQ clock driver init done\n");
 }

@@ -553,7 +553,7 @@
 #define IMX8MQ_CLK_USDHC2_ROOT			429
 #define IMX8MQ_CLK_WDOG1_ROOT			430
 #define IMX8MQ_CLK_WDOG2_ROOT			431
-#define IMX8MQ_CLK_VPU_ROOT			432
+#define IMX8MQ_CLK_WDOG3_ROOT			432
 #define IMX8MQ_CLK_GPU_ROOT			433
 #define IMX8MQ_CLK_HEVC_ROOT			434
 #define IMX8MQ_CLK_AVC_ROOT			435
@@ -588,5 +588,14 @@
 #define IMX8MQ_CLK_SAI5_IPG			460
 #define IMX8MQ_CLK_SAI6_IPG			461
 
-#define IMX8MQ_CLK_END				462
+/* DSI AHB/IPG clocks */
+/* rxesc clock */
+#define IMX8MQ_CLK_DSI_AHB_SRC                  462
+#define IMX8MQ_CLK_DSI_AHB_CG                   463
+#define IMX8MQ_CLK_DSI_AHB_PRE_DIV              464
+#define IMX8MQ_CLK_DSI_AHB_DIV                  465
+/* txesc clock */
+#define IMX8MQ_CLK_DSI_IPG_DIV                  466
+
+#define IMX8MQ_CLK_END				467
 #endif /* __DT_BINDINGS_CLOCK_IMX8MQ_H */
