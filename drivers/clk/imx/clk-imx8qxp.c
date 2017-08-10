@@ -24,6 +24,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/types.h>
+#include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 
 #include <soc/imx8/imx8qxp/lpcg.h>
@@ -97,11 +98,16 @@ static const char *enet_sels[] = { "enet_25MHz", "enet_125MHz", };
 static const char *enet0_rmii_tx_sels[] = { "enet0_ref_div", "dummy", };
 static const char *enet1_rmii_tx_sels[] = { "enet1_ref_div", "dummy", };
 
-static void __init imx8qxp_clocks_init(struct device_node *ccm_node)
+static int imx8qxp_clk_probe(struct platform_device *pdev)
 {
-	int i;
+	struct device_node *ccm_node = pdev->dev.of_node;
 	struct device_node *np_acm;
 	void __iomem *base_acm;
+	int i, ret;
+
+	ret = imx8_clk_mu_init();
+	if (ret)
+		return ret;
 
 	pr_info("***** imx8qxp_clocks_init *****\n");
 
@@ -545,8 +551,8 @@ static void __init imx8qxp_clocks_init(struct device_node *ccm_node)
 	clks[IMX8QXP_AUD_GPT9_CLKIN]     = imx_clk_gate2_scu("aud_gpt9_clkin", "ipg_aud_clk_root", (void __iomem *)(AUD_GPT_9_LPCG), 0, FUNCTION_NAME(PD_AUD_GPT_9));
 	clks[IMX8QXP_AUD_GPT10_IPG]      = imx_clk_gate2_scu("aud_gpt10_ipg", "ipg_aud_clk_root", (void __iomem *)(AUD_GPT_10_LPCG), 16, FUNCTION_NAME(PD_AUD_GPT_10));
 	clks[IMX8QXP_AUD_GPT10_CLKIN]    = imx_clk_gate2_scu("aud_gpt10_clkin", "ipg_aud_clk_root", (void __iomem *)(AUD_GPT_10_LPCG), 0, FUNCTION_NAME(PD_AUD_GPT_10));
-	clks[IMX8QXP_AUD_MCLKOUT0]       = imx_clk_gate2_scu("aud_mclkout0", "ipg_aud_clk_root", (void __iomem *)(AUD_MCLKOUT0_LPCG), 0, FUNCTION_NAME(PD_AUDIO));
-	clks[IMX8QXP_AUD_MCLKOUT1]       = imx_clk_gate2_scu("aud_mclkout1", "ipg_aud_clk_root", (void __iomem *)(AUD_MCLKOUT1_LPCG), 0, FUNCTION_NAME(PD_AUDIO));
+	clks[IMX8QXP_AUD_MCLKOUT0]       = imx_clk_gate2_scu("aud_mclkout0", "acm_mclkout0_sel", (void __iomem *)(AUD_MCLKOUT0_LPCG), 0, FUNCTION_NAME(PD_AUDIO));
+	clks[IMX8QXP_AUD_MCLKOUT1]       = imx_clk_gate2_scu("aud_mclkout1", "acm_mclkout1_sel", (void __iomem *)(AUD_MCLKOUT1_LPCG), 0, FUNCTION_NAME(PD_AUDIO));
 	clks[IMX8QXP_AUD_SPDIF_0_GCLKW]  = imx_clk_gate2_scu("spdif0_gclkw", "ipg_aud_clk_root", (void __iomem *)(AUD_SPDIF_0_LPCG), 16, FUNCTION_NAME(PD_AUD_SPDIF_0));
 	clks[IMX8QXP_AUD_SPDIF_0_TX_CLK] = imx_clk_gate2_scu("spdif0_tx_clk", "ipg_aud_clk_root", (void __iomem *)(AUD_SPDIF_0_LPCG), 0, FUNCTION_NAME(PD_AUD_SPDIF_0));
 	clks[IMX8QXP_AUD_ASRC_0_IPG]     = imx_clk_gate2_scu("aud_asrc0_ipg", "ipg_aud_clk_root", (void __iomem *)(AUD_ASRC_0_LPCG), 16, FUNCTION_NAME(PD_AUD_ASRC_0));
@@ -564,18 +570,24 @@ static void __init imx8qxp_clocks_init(struct device_node *ccm_node)
 	clk_data.clks = clks;
 	clk_data.clk_num = ARRAY_SIZE(clks);
 	of_clk_add_provider(ccm_node, of_clk_src_onecell_get, &clk_data);
-}
-
-static int __init imx8qxp_post_clk_init(void)
-{
-	int i;
-
-	/* Initialize the clk rate for all the possible clocks now. */
-	for (i = 0; i < IMX8QXP_CLK_END; i++)
-		clk_get_rate(clks[i]);
 
 	return 0;
 }
-postcore_initcall(imx8qxp_post_clk_init);
 
-CLK_OF_DECLARE(imx8qxp, "fsl,imx8qxp-clk", imx8qxp_clocks_init);
+static const struct of_device_id imx8qxp_match[] = {
+	{ .compatible = "fsl,imx8qxp-clk", }
+};
+
+static struct platform_driver imx8qxp_clk_driver = {
+	.driver = {
+		.name = "imx8qxp-clk",
+		.of_match_table = imx8qxp_match,
+	},
+	.probe = imx8qxp_clk_probe,
+};
+
+static int __init imx8qxp_clk_init(void)
+{
+	return platform_driver_register(&imx8qxp_clk_driver);
+}
+core_initcall(imx8qxp_clk_init);
