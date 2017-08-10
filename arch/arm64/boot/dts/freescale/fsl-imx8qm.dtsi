@@ -34,8 +34,10 @@
 		csi1 = &mipi_csi_1;
 		dpu0 = &dpu1;
 		dpu1 = &dpu2;
-		ethernet1 = &fec1;
-		ethernet2 = &fec2;
+		ethernet0 = &fec1;
+		ethernet1 = &fec2;
+		ldb0 = &ldb1;
+		ldb1 = &ldb2;
 		isi0 = &isi_0;
 		isi1 = &isi_1;
 		isi2 = &isi_2;
@@ -140,26 +142,26 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			pd_mipi0: PD_MIPI0 {
+			pd_mipi0: PD_MIPI_0_DSI {
 				reg = <SC_R_MIPI_0>;
 				#power-domain-cells = <0>;
 				power-domains =<&pd_dc0>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				pd_mipi0_i2c0: PD_MIPI0_I2C0 {
+				pd_mipi0_i2c0: PD_MIPI_0_DSI_I2C0 {
 					reg = <SC_R_MIPI_0_I2C_0>;
 					#power-domain-cells = <0>;
 					power-domains =<&pd_mipi0>;
 				};
 
-				pd_mipi0_i2c1: PD_MIPI0_I2C1 {
+				pd_mipi0_i2c1: PD_MIPI_0_DSI_I2C1 {
 					reg = <SC_R_MIPI_0_I2C_1>;
 					#power-domain-cells = <0>;
 					power-domains =<&pd_mipi0>;
 				};
 
-				pd_mipi0_pwm: PD_MIPI0_PWM {
+				pd_mipi0_pwm: PD_MIPI_0_DSI_PWM0 {
 					reg = <SC_R_MIPI_0_PWM_0>;
 					#power-domain-cells = <0>;
 					power-domains =<&pd_mipi0>;
@@ -1678,6 +1680,32 @@
 		status = "disabled";
 	};
 
+	irqsteer_dsi0: irqsteer@56220000 {
+		compatible = "nxp,imx-irqsteer";
+		reg = <0x0 0x56220000 0x0 0x1000>;
+		interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-controller;
+		interrupt-parent = <&gic>;
+		#interrupt-cells = <2>;
+		clocks = <&clk IMX8QM_DSI0_LIS_IPG_CLK>;
+		clock-names = "ipg";
+		power-domains = <&pd_mipi0>;
+	};
+
+	i2c0_mipi_dsi0: i2c@56226000 {
+		compatible = "fsl,imx8qm-lpi2c";
+		reg = <0x0 0x56226000 0x0 0x1000>;
+		interrupts = <8 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-parent = <&irqsteer_dsi0>;
+		clocks = <&clk IMX8QM_MIPI0_I2C0_CLK>,
+			 <&clk IMX8QM_MIPI0_I2C0_IPG_CLK>;
+		clock-names = "per", "ipg";
+		assigned-clocks = <&clk IMX8QM_MIPI0_I2C0_CLK>;
+		assigned-clock-rates = <24000000>;
+		power-domains = <&pd_mipi0_i2c0>;
+		status = "disabled";
+	};
+
 	mipi0: mipi@56220000 {
 		compatible = "fsl,imx8qm-mipi_dsi";
 		reg = <0x0 0x56220000 0x0 0x10000>;
@@ -2109,10 +2137,12 @@
 				<GIC_SPI 257 IRQ_TYPE_LEVEL_HIGH>,
 				<GIC_SPI 259 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&clk IMX8QM_ENET0_IPG_CLK>, <&clk IMX8QM_ENET0_AHB_CLK>, <&clk IMX8QM_ENET0_RGMII_TX_CLK>,
-			<&clk IMX8QM_ENET0_PTP_CLK>;
-		clock-names = "ipg", "ahb", "enet_clk_ref", "ptp";
-		assigned-clocks = <&clk IMX8QM_ENET0_REF_DIV>, <&clk IMX8QM_ENET0_PTP_CLK>;
-		assigned-clock-rates = <125000000>, <125000000>;
+			<&clk IMX8QM_ENET0_PTP_CLK>, <&clk IMX8QM_ENET0_TX_CLK>;
+		clock-names = "ipg", "ahb", "enet_clk_ref", "ptp", "enet_2x_txclk";
+		assigned-clocks = <&clk IMX8QM_ENET0_ROOT_DIV>,
+				  <&clk IMX8QM_ENET0_REF_DIV>,
+				  <&clk IMX8QM_ENET0_PTP_CLK>;
+		assigned-clock-rates = <250000000>, <125000000>, <125000000>;
 		fsl,num-tx-queues=<3>;
 		fsl,num-rx-queues=<3>;
 		power-domains = <&pd_conn_enet0>;
@@ -2128,10 +2158,12 @@
 				<GIC_SPI 261 IRQ_TYPE_LEVEL_HIGH>,
 				<GIC_SPI 263 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&clk IMX8QM_ENET1_IPG_CLK>, <&clk IMX8QM_ENET1_AHB_CLK>, <&clk IMX8QM_ENET1_RGMII_TX_CLK>,
-			<&clk IMX8QM_ENET1_PTP_CLK>;
-		clock-names = "ipg", "ahb", "enet_clk_ref", "ptp";
-		assigned-clocks = <&clk IMX8QM_ENET1_REF_DIV>, <&clk IMX8QM_ENET1_PTP_CLK>;
-		assigned-clock-rates = <125000000>, <125000000>;
+			<&clk IMX8QM_ENET1_PTP_CLK>, <&clk IMX8QM_ENET1_TX_CLK>;
+		clock-names = "ipg", "ahb", "enet_clk_ref", "ptp", "enet_2x_txclk";
+		assigned-clocks = <&clk IMX8QM_ENET1_ROOT_DIV>,
+				  <&clk IMX8QM_ENET1_REF_DIV>,
+				  <&clk IMX8QM_ENET1_PTP_CLK>;
+		assigned-clock-rates = <250000000>, <125000000>, <125000000>;
 		fsl,num-tx-queues=<3>;
 		fsl,num-rx-queues=<3>;
 		power-domains = <&pd_conn_enet1>;

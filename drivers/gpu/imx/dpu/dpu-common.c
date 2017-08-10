@@ -1175,8 +1175,8 @@ static void dpu_debug_ip_identity(struct dpu_soc *dpu)
 	}
 }
 
-/* FIXME: set pixel link in a proper manner */
-static int dpu_pixel_link_config(int id)
+/* FIXME: initialize pixel link in a proper manner */
+static void dpu_pixel_link_init(int id)
 {
 	sc_err_t sciErr;
 	sc_ipc_t ipcHndl = 0;
@@ -1185,26 +1185,25 @@ static int dpu_pixel_link_config(int id)
 	sciErr = sc_ipc_getMuID(&mu_id);
 	if (sciErr != SC_ERR_NONE) {
 		pr_err("Cannot obtain MU ID\n");
-		return sciErr;
+		return;
 	}
 
 	sciErr = sc_ipc_open(&ipcHndl, mu_id);
 	if (sciErr != SC_ERR_NONE) {
 		pr_err("sc_ipc_open failed! (sciError = %d)\n", sciErr);
-		return sciErr;
+		return;
 	}
 
 	if (id == 0) {
-		/* Enable All Display Pixel Links */
 		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST1_ADDR, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST1_ADDR sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST1_ENB, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST1_ENB, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST1_ENB sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST1_VLD, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST1_VLD, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST1_VLD sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
@@ -1212,34 +1211,31 @@ static int dpu_pixel_link_config(int id)
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST2_ADDR sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST2_ENB, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST2_ENB, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST2_ENB sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST2_VLD, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_PXL_LINK_MST2_VLD, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_PXL_LINK_MST2_VLD sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		/* todo: move SC_C_SYNC_CTRL0 to after first valid frame */
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_SYNC_CTRL0, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_SYNC_CTRL0, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_SYNC_CTRL0 sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		/* todo: move SC_C_SYNC_CTRL1 to after first valid frame */
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_SYNC_CTRL1, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_0, SC_C_SYNC_CTRL1, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_0:SC_C_SYNC_CTRL1 sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 	} else if (id == 1) {
-		/* Enable All Display Pixel Links */
 		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST1_ADDR, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST1_ADDR sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST1_ENB, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST1_ENB, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST1_ENB sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST1_VLD, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST1_VLD, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST1_VLD sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
@@ -1247,27 +1243,24 @@ static int dpu_pixel_link_config(int id)
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST2_ADDR sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST2_ENB, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST2_ENB, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST2_ENB sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST2_VLD, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_PXL_LINK_MST2_VLD, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_PXL_LINK_MST2_VLD sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		/* todo: move SC_C_SYNC_CTRL0 to after first valid frame */
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_SYNC_CTRL0, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_SYNC_CTRL0, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_SYNC_CTRL0 sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 
-		/* todo: move SC_C_SYNC_CTRL1 to after first valid frame */
-		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_SYNC_CTRL1, 1);
+		sciErr = sc_misc_set_control(ipcHndl, SC_R_DC_1, SC_C_SYNC_CTRL1, 0);
 		if (sciErr != SC_ERR_NONE)
 			pr_err("SC_R_DC_1:SC_C_SYNC_CTRL1 sc_misc_set_control failed! (sciError = %d)\n", sciErr);
 	}
 
 	sc_ipc_close(mu_id);
-	return sciErr;
 }
 
 static int dpu_probe(struct platform_device *pdev)
@@ -1362,7 +1355,7 @@ static int dpu_probe(struct platform_device *pdev)
 	dpu_debug_ip_identity(dpu);
 
 	if (devtype->pixel_link_quirks)
-		dpu_pixel_link_config(dpu->id);
+		dpu_pixel_link_init(dpu->id);
 
 	dev_info(dpu->dev, "driver probed\n");
 

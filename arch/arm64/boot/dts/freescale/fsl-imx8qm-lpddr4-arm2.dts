@@ -210,6 +210,13 @@
 			>;
 		};
 
+		pinctrl_mipi0_lpi2c0: mipi0_lpi2c0grp {
+			fsl,pins = <
+				SC_P_MIPI_DSI0_I2C0_SCL_MIPI_DSI0_I2C0_SCL	0xc600004c
+				SC_P_MIPI_DSI0_I2C0_SDA_MIPI_DSI0_I2C0_SDA	0xc600004c
+			>;
+		};
+
 		pinctrl_lpi2c1: lpi2c1grp {
 			fsl,pins = <
 				SC_P_GPT0_CLK_DMA_I2C1_SCL              0xc600004c
@@ -463,8 +470,9 @@
 	pinctrl-0 = <&pinctrl_fec1>;
 	phy-mode = "rgmii";
 	phy-handle = <&ethphy0>;
-	fsl,ar8031-phy-fixup;
 	fsl,magic-packet;
+	fsl,rgmii_txc_dly;
+	fsl,rgmii_rxc_dly;
 	status = "okay";
 
 	mdio {
@@ -474,11 +482,15 @@
 		ethphy0: ethernet-phy@0 {
 			compatible = "ethernet-phy-ieee802.3-c22";
 			reg = <0>;
+			at803x,eee-disabled;
+			at803x,vddio-1p8v;
 		};
 
 		ethphy1: ethernet-phy@1 {
 			compatible = "ethernet-phy-ieee802.3-c22";
 			reg = <1>;
+			at803x,eee-disabled;
+			at803x,vddio-1p8v;
 		};
 	};
 };
@@ -486,9 +498,8 @@
 &fec2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_fec2>;
-	phy-mode = "rgmii";
+	phy-mode = "rgmii-id";
 	phy-handle = <&ethphy1>;
-	fsl,ar8031-phy-fixup;
 	fsl,magic-packet;
 	status = "okay";
 };
@@ -576,6 +587,16 @@
 		};
 	};
 };
+
+&i2c0_mipi_dsi0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_mipi0_lpi2c0>;
+	clock-frequency = <100000>;
+	status = "okay";
+};
+
 &i2c0_hdmi {
 	#address-cells = <1>;
 	#size-cells = <0>;

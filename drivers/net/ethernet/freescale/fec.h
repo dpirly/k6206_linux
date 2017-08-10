@@ -383,6 +383,8 @@ struct bufdesc_ex {
 #define FEC_RX_DISABLED_IMASK (FEC_DEFAULT_IMASK & (~FEC_ENET_RXF))
 
 #define FEC_ENET_ETHEREN	((uint)0x00000002)
+#define FEC_ENET_TXC_DLY	((uint)0x00010000)
+#define FEC_ENET_RXC_DLY	((uint)0x00020000)
 
 /* ENET interrupt coalescing macro define */
 #define FEC_ITR_CLK_SEL		(0x1 << 30)
@@ -460,7 +462,17 @@ struct bufdesc_ex {
 #define FEC_QUIRK_BUG_WAITMODE		(1 << 15)
 
 /* PHY fixup flag define */
-#define FEC_QUIRK_AR8031_FIXUP		(1 << 0)
+#define FEC_QUIRK_AR8031_FIXUP		(1 << 16)
+
+/* i.MX8QM/QXP ENET IP version add new feture to  generate delayed TXC/RXC
+ * as an alternative option to make sure it can work well with various PHYs.
+ * - For the implementation of delayed TXC, ENET will take synchronized 250/125MHz
+ *   clocks to generate 2ns delay by registering original TXC with positive edge
+ *   of inverted 250MHz clock.
+ * - For the implementation of delayed RXC, there will be buffers in the subsystem
+ *   level. The exact length of delay buffers will be decided when closing I/O timing.
+ */
+#define FEC_QUIRK_DELAYED_CLKS_SUPPORT	(1 << 17)
 
 struct bufdesc_prop {
 	int qid;
@@ -518,6 +530,7 @@ struct fec_enet_private {
 	struct clk *clk_ref;
 	struct clk *clk_enet_out;
 	struct clk *clk_ptp;
+	struct clk *clk_2x_txclk;
 
 	bool ptp_clk_on;
 	struct mutex ptp_clk_mutex;
@@ -550,6 +563,8 @@ struct fec_enet_private {
 	struct device_node *phy_node;
 	int	link;
 	bool	fixed_link;
+	bool	rgmii_txc_dly;
+	bool	rgmii_rxc_dly;
 	int	full_duplex;
 	int	speed;
 	struct	completion mdio_done;
@@ -615,6 +630,7 @@ int fec_ptp_get(struct net_device *ndev, struct ifreq *ifr);
 uint fec_ptp_check_pps_event(struct fec_enet_private *fep);
 void fec_enet_register_fixup(struct net_device *ndev);
 int of_fec_enet_parse_fixup(struct device_node *np);
+void fec_enet_get_mac_from_fuse(struct device_node *np, unsigned char *mac);
 
 /****************************************************************************/
 #endif /* FEC_H */
