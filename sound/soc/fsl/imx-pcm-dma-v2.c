@@ -53,7 +53,7 @@ static int imx_pcm_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct imx_pcm_dma_data *dma_data;
+	struct snd_dmaengine_dai_dma_data *dma_data;
 	struct dma_slave_config config;
 	struct dma_chan *chan;
 	int err = 0;
@@ -79,8 +79,8 @@ static int imx_pcm_hw_params(struct snd_pcm_substream *substream,
 		return err;
 
 	snd_dmaengine_pcm_set_config_from_dai_data(substream,
-			snd_soc_dai_get_dma_data(rtd->cpu_dai, substream),
-			&config);
+					dma_data,
+					&config);
 
 	return dmaengine_slave_config(chan, &config);
 }
@@ -113,12 +113,23 @@ static int imx_pcm_open(struct snd_pcm_substream *substream)
 		chan = dma_request_slave_channel(rtd->cpu_dai->dev,
 						 dma_data->filter_data);
 		ret = snd_dmaengine_pcm_open(substream, chan);
+		if (ret)
+			return ret;
 	} else {
 		ret = snd_dmaengine_pcm_open_request_chan(substream,
 							  imx_dma_filter_fn,
 							  dma_data->filter_data);
+		if (ret)
+			return ret;
 	}
-	return ret;
+
+	ret = snd_pcm_hw_constraint_integer(substream->runtime,
+					    SNDRV_PCM_HW_PARAM_PERIODS);
+	if (ret < 0)
+		return ret;
+
+
+	return 0;
 }
 
 static int imx_pcm_mmap(struct snd_pcm_substream *substream,

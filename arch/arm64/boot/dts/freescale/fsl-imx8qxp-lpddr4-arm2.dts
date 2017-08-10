@@ -265,6 +265,15 @@
 			>;
 		};
 
+		pinctrl_lpuart1: lpuart1grp {
+			fsl,pins = <
+				SC_P_UART1_TX_ADMA_UART1_TX		0x0600004c
+				SC_P_UART1_RX_ADMA_UART1_RX		0x0600004c
+				SC_P_UART1_RTS_B_ADMA_UART1_RTS_B	0x0600004c
+				SC_P_UART1_CTS_B_ADMA_UART1_CTS_B	0x0600004c
+			>;
+		};
+
 		pinctrl_lpuart3: lpuart3grp {
 			fsl,pins = <
 				SC_P_FLEXCAN2_RX_ADMA_UART3_RX	0x0600004c
@@ -342,6 +351,14 @@
 				SC_P_USDHC1_CD_B_LSIO_GPIO4_IO22	0x06000021
 			>;
 		};
+
+		pinctrl_pcieb: pcieagrp{
+			fsl,pins = <
+				SC_P_PCIE_CTRL0_PERST_B_LSIO_GPIO4_IO00		0x06000021
+				SC_P_PCIE_CTRL0_CLKREQ_B_LSIO_GPIO4_IO01	0x06000021
+				SC_P_PCIE_CTRL0_WAKE_B_LSIO_GPIO4_IO02		0x06000021
+			>;
+		};
 	};
 };
 
@@ -377,7 +394,7 @@
 	phy-handle = <&ethphy1>;
 	fsl,ar8031-phy-fixup;
 	fsl,magic-packet;
-	status = "okay";
+	status = "disabled";
 };
 
 &flexcan1 {
@@ -476,6 +493,12 @@
 	status = "okay";
 };
 
+&lpuart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpuart1>;
+	status = "okay";
+};
+
 &lpuart3 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_lpuart3>;
@@ -520,5 +543,13 @@
 };
 
 &dpu1 {
+	status = "okay";
+};
+
+&pcieb{
+	ext_osc = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_pcieb>;
+	reset-gpio = <&gpio4 0 GPIO_ACTIVE_LOW>;
 	status = "okay";
 };

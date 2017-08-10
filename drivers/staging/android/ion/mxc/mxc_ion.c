@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2011 Google, Inc.
  * Copyright (C) 2012-2016 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -80,6 +81,11 @@ mxc_custom_ioctl(struct ion_client *client, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case ION_IOC_PHYS:
 		{
+#ifdef CONFIG_ARCH_MXC_ARM64
+			/* Don't use ION_IOC_PHYS on ARM64,
+			 * use ION_IOC_PHYS_DMA */
+			return -EFAULT;
+#else
 			struct ion_handle *handle;
 			struct ion_phys_data data;
 			struct device *dev;
@@ -105,6 +111,7 @@ mxc_custom_ioctl(struct ion_client *client, unsigned int cmd, unsigned long arg)
 					 sizeof(struct ion_phys_data)))
 				return -EFAULT;
 			return 0;
+#endif
 		}
 	case ION_IOC_PHYS_DMA:
 		{
@@ -112,7 +119,6 @@ mxc_custom_ioctl(struct ion_client *client, unsigned int cmd, unsigned long arg)
 			struct device *dev = NULL;
 			struct dma_buf *dmabuf = NULL;
 			unsigned long phys = 0;
-			u64 dma_mask = DMA_BIT_MASK(32);
 			size_t len = 0;
 			struct ion_phys_dma_data data;
 			const struct vb2_mem_ops *mem_ops =
@@ -130,7 +136,6 @@ mxc_custom_ioctl(struct ion_client *client, unsigned int cmd, unsigned long arg)
 				return -1;
 
 			dev = ion_device_get_by_client(client);
-			dev->dma_mask = &dma_mask;
 
 			mem_priv = mem_ops->attach_dmabuf(dev,
 							  dmabuf, dmabuf->size,
@@ -166,7 +171,6 @@ err1:
 	case ION_IOC_PHYS_VIRT:
 		{
 			struct device *dev = NULL;
-			u64 dma_mask = DMA_BIT_MASK(32);
 			struct ion_phys_virt_data data;
 			const struct vb2_mem_ops *mem_ops =
 			    &vb2_dma_contig_memops;
@@ -182,7 +186,6 @@ err1:
 				return -1;
 
 			dev = ion_device_get_by_client(client);
-			dev->dma_mask = &dma_mask;
 
 			mem_priv = mem_ops->get_userptr(dev,
 							data.virt, data.size,
@@ -233,6 +236,8 @@ mxc_ion_probe(struct platform_device *pdev)
 		err = PTR_ERR(idev);
 		goto err;
 	}
+
+	of_dma_configure(idev->dev.this_device, pdev->dev.of_node);
 
 	/* create the heaps as specified in the board file */
 	for (i = 0; i < num_heaps; i++) {
