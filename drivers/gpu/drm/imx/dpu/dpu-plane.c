@@ -111,13 +111,28 @@ static const struct drm_plane_funcs dpu_plane_funcs = {
 	.atomic_destroy_state	= dpu_drm_atomic_plane_destroy_state,
 };
 
+static inline dma_addr_t
+drm_plane_state_to_baseaddr(struct drm_plane_state *state)
+{
+	struct drm_framebuffer *fb = state->fb;
+	struct drm_gem_cma_object *cma_obj;
+
+	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	BUG_ON(!cma_obj);
+
+	return cma_obj->paddr + fb->offsets[0] +
+	       fb->pitches[0] * (state->src_y >> 16) +
+	       (fb->bits_per_pixel >> 3) * (state->src_x >> 16);
+}
+
 static int dpu_plane_atomic_check(struct drm_plane *plane,
 				  struct drm_plane_state *state)
 {
+	struct dpu_plane *dplane = to_dpu_plane(plane);
 	struct dpu_plane_state *dpstate = to_dpu_plane_state(state);
 	struct drm_crtc_state *crtc_state;
 	struct drm_framebuffer *fb = state->fb;
-	struct drm_gem_cma_object *cma_obj;
+	dma_addr_t baseaddr;
 	unsigned int depth;
 	int bpp;
 
@@ -142,10 +157,17 @@ static int dpu_plane_atomic_check(struct drm_plane *plane,
 		return 0;
 	}
 
-	/* no scaling */
-	if (state->src_w >> 16 != state->crtc_w ||
-	    state->src_h >> 16 != state->crtc_h)
-		return -EINVAL;
+	if (dplane->grp->has_vproc) {
+		/* no down scaling */
+		if (state->src_w >> 16 > state->crtc_w ||
+		    state->src_h >> 16 > state->crtc_h)
+			return -EINVAL;
+	} else {
+		/* no scaling */
+		if (state->src_w >> 16 != state->crtc_w ||
+		    state->src_h >> 16 != state->crtc_h)
+			return -EINVAL;
+	}
 
 	/* no off screen */
 	if (state->crtc_x < 0 || state->crtc_y < 0)
@@ -166,15 +188,15 @@ static int dpu_plane_atomic_check(struct drm_plane *plane,
 	}
 
 	/* base address alignment check */
-	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	baseaddr = drm_plane_state_to_baseaddr(state);
 	drm_fb_get_bpp_depth(fb->pixel_format, &depth, &bpp);
 	switch (bpp) {
 	case 32:
-		if (cma_obj->paddr & 0x3)
+		if (baseaddr & 0x3)
 			return -EINVAL;
 		break;
 	case 16:
-		if (cma_obj->paddr & 0x1)
+		if (baseaddr & 0x1)
 			return -EINVAL;
 		break;
 	}
@@ -194,13 +216,17 @@ static void dpu_plane_atomic_update(struct drm_plane *plane,
 	struct drm_framebuffer *fb = state->fb;
 	struct dpu_plane_res *res = &dplane->grp->res;
 	struct dpu_fetchdecode *fd;
+	struct dpu_hscaler *hs;
+	struct dpu_vscaler *vs;
 	struct dpu_layerblend *lb;
 	struct dpu_constframe *cf;
 	struct dpu_extdst *ed;
-	struct drm_gem_cma_object *cma_obj;
 	struct device *dev = plane->dev->dev;
-	unsigned int depth, src_x, src_y, src_w, src_h;
+	dpu_block_id_t vs_id = ID_NONE, hs_id;
+	lb_sec_sel_t lb_src = dpstate->source;
+	unsigned int depth, src_w, src_h;
 	int bpp, fd_id, lb_id;
+	bool need_hscaler = false, need_vscaler = false;
 
 	/*
 	 * Do nothing since the plane is disabled by
@@ -220,12 +246,22 @@ static void dpu_plane_atomic_update(struct drm_plane *plane,
 	fd = res->fd[fd_id];
 	lb = res->lb[lb_id];
 
-	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-
-	src_x = state->src_x >> 16;
-	src_y = state->src_y >> 16;
 	src_w = state->src_w >> 16;
 	src_h = state->src_h >> 16;
+
+	if (src_w != state->crtc_w) {
+		need_hscaler = true;
+		hs = fetchdecode_get_hscaler(fd);
+		if (IS_ERR(hs))
+			return;
+	}
+
+	if (src_h != state->crtc_h) {
+		need_vscaler = true;
+		vs = fetchdecode_get_vscaler(fd);
+		if (IS_ERR(vs))
+			return;
+	}
 
 	drm_fb_get_bpp_depth(fb->pixel_format, &depth, &bpp);
 
@@ -233,15 +269,66 @@ static void dpu_plane_atomic_update(struct drm_plane *plane,
 	fetchdecode_source_stride(fd, fb->pitches[0]);
 	fetchdecode_src_buf_dimensions(fd, src_w, src_h);
 	fetchdecode_set_fmt(fd, fb->pixel_format);
-	fetchdecode_clipoffset(fd, src_x, src_y);
-	fetchdecode_clipdimensions(fd, src_w, src_h);
 	fetchdecode_layerproperty(fd, true);
-	fetchdecode_framedimensions(fd, state->crtc_w, state->crtc_h);
-	fetchdecode_baseaddress(fd, cma_obj->paddr);
+	fetchdecode_framedimensions(fd, src_w, src_h);
+	fetchdecode_baseaddress(fd, drm_plane_state_to_baseaddr(state));
+	fetchdecode_set_stream_id(fd, dplane->stream_id ?
+					DPU_PLANE_SRC_TO_DISP_STREAM1 :
+					DPU_PLANE_SRC_TO_DISP_STREAM0);
+
+	/* vscaler comes first */
+	if (need_vscaler) {
+		vs_id = vscaler_get_block_id(vs);
+		if (vs_id == ID_NONE)
+			return;
+
+		vscaler_pixengcfg_dynamic_src_sel(vs,
+					(vs_src_sel_t)(dpstate->source));
+		vscaler_pixengcfg_clken(vs, CLKEN__AUTOMATIC);
+		vscaler_setup1(vs, src_h, state->crtc_h);
+		vscaler_output_size(vs, state->crtc_h);
+		vscaler_field_mode(vs, SCALER_INPUT);
+		vscaler_filter_mode(vs, SCALER_LINEAR);
+		vscaler_scale_mode(vs, SCLAER_UPSCALE);
+		vscaler_mode(vs, SCALER_ACTIVE);
+		vscaler_set_stream_id(vs, dplane->stream_id ?
+					DPU_PLANE_SRC_TO_DISP_STREAM1 :
+					DPU_PLANE_SRC_TO_DISP_STREAM0);
+
+		lb_src = (lb_sec_sel_t)vs_id;
+
+		dev_dbg(dev, "[PLANE:%d:%s] vscaler-0x%02x\n",
+					plane->base.id, plane->name, vs_id);
+	}
+
+	/* and then, hscaler */
+	if (need_hscaler) {
+		hs_id = hscaler_get_block_id(hs);
+		if (hs_id == ID_NONE)
+			return;
+
+		hscaler_pixengcfg_dynamic_src_sel(hs, need_vscaler ?
+					(hs_src_sel_t)(vs_id) :
+					(hs_src_sel_t)(dpstate->source));
+		hscaler_pixengcfg_clken(hs, CLKEN__AUTOMATIC);
+		hscaler_setup1(hs, src_w, state->crtc_w);
+		hscaler_output_size(hs, state->crtc_w);
+		hscaler_filter_mode(hs, SCALER_LINEAR);
+		hscaler_scale_mode(hs, SCLAER_UPSCALE);
+		hscaler_mode(hs, SCALER_ACTIVE);
+		hscaler_set_stream_id(hs, dplane->stream_id ?
+					DPU_PLANE_SRC_TO_DISP_STREAM1 :
+					DPU_PLANE_SRC_TO_DISP_STREAM0);
+
+		lb_src = (lb_sec_sel_t)hs_id;
+
+		dev_dbg(dev, "[PLANE:%d:%s] hscaler-0x%02x\n",
+					plane->base.id, plane->name, hs_id);
+	}
 
 	layerblend_pixengcfg_dynamic_prim_sel(lb, dpstate->stage);
-	layerblend_pixengcfg_dynamic_sec_sel(lb, dpstate->source);
-	layerblend_control(lb, BLEND);
+	layerblend_pixengcfg_dynamic_sec_sel(lb, lb_src);
+	layerblend_control(lb, LB_BLEND);
 	layerblend_pixengcfg_clken(lb, CLKEN__AUTOMATIC);
 	layerblend_position(lb, dpstate->layer_x, dpstate->layer_y);
 

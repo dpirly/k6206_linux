@@ -286,6 +286,23 @@ typedef enum {
 } fgdm_t;
 
 typedef enum {
+	HS_SRC_SEL__DISABLE		= ID_NONE,
+	HS_SRC_SEL__MATRIX9		= ID_MATRIX9,
+	HS_SRC_SEL__VSCALER9		= ID_VSCALER9,
+	HS_SRC_SEL__FILTER9		= ID_FILTER9,
+	HS_SRC_SEL__EXTSRC4		= ID_EXTSRC4,
+	HS_SRC_SEL__EXTSRC5		= ID_EXTSRC5,
+	HS_SRC_SEL__FETCHDECODE2	= ID_FETCHDECODE2,
+	HS_SRC_SEL__FETCHDECODE3	= ID_FETCHDECODE3,
+	HS_SRC_SEL__FETCHDECODE0	= ID_FETCHDECODE0,
+	HS_SRC_SEL__FETCHDECODE1	= ID_FETCHDECODE1,
+	HS_SRC_SEL__MATRIX4		= ID_MATRIX4,
+	HS_SRC_SEL__VSCALER4		= ID_VSCALER4,
+	HS_SRC_SEL__MATRIX5		= ID_MATRIX5,
+	HS_SRC_SEL__VSCALER5		= ID_VSCALER5,
+} hs_src_sel_t;
+
+typedef enum {
 	/* common options */
 	LB_PRIM_SEL__DISABLE		= ID_NONE,
 	LB_PRIM_SEL__BLITBLEND9		= ID_BLITBLEND9,
@@ -340,9 +357,55 @@ typedef enum {
 } lb_shadow_sel_t;
 
 typedef enum {
-	NEUTRAL,	/* Output is same as primary input. */
-	BLEND,
+	LB_NEUTRAL,	/* Output is same as primary input. */
+	LB_BLEND,
 } lb_mode_t;
+
+typedef enum {
+	/* Constant 0 indicates frame or top field. */
+	SCALER_ALWAYS0 = 0x0,
+	/* Constant 1 indicates bottom field. */
+	SCALER_ALWAYS1 = 0x1 << 12,
+	/* Output field polarity is taken from input field polarity. */
+	SCALER_INPUT = 0x2 << 12,
+	/* Output field polarity toggles, starting with 0 after reset. */
+	SCALER_TOGGLE = 0x3 << 12,
+} scaler_field_mode_t;
+
+typedef enum {
+	/* pointer-sampling */
+	SCALER_NEAREST = 0x0,
+	/* box filter */
+	SCALER_LINEAR = 0x100,
+} scaler_filter_mode_t;
+
+typedef enum {
+	SCLAER_DOWNSCALE = 0x0,
+	SCLAER_UPSCALE = 0x10,
+} scaler_scale_mode_t;
+
+typedef enum {
+	/* Pixel by-pass the scaler, all other settings are ignored. */
+	SCALER_NEUTRAL = 0x0,
+	/* Scaler is active. */
+	SCALER_ACTIVE = 0x1,
+} scaler_mode_t;
+
+typedef enum {
+	VS_SRC_SEL__DISABLE		= ID_NONE,
+	VS_SRC_SEL__MATRIX9		= ID_MATRIX9,
+	VS_SRC_SEL__HSCALER9		= ID_HSCALER9,
+	VS_SRC_SEL__EXTSRC4		= ID_EXTSRC4,
+	VS_SRC_SEL__EXTSRC5		= ID_EXTSRC5,
+	VS_SRC_SEL__FETCHDECODE2	= ID_FETCHDECODE2,
+	VS_SRC_SEL__FETCHDECODE3	= ID_FETCHDECODE3,
+	VS_SRC_SEL__FETCHDECODE0	= ID_FETCHDECODE0,
+	VS_SRC_SEL__FETCHDECODE1	= ID_FETCHDECODE1,
+	VS_SRC_SEL__MATRIX4		= ID_MATRIX4,
+	VS_SRC_SEL__HSCALER4		= ID_HSCALER4,
+	VS_SRC_SEL__MATRIX5		= ID_MATRIX5,
+	VS_SRC_SEL__HSCALER5		= ID_HSCALER5,
+} vs_src_sel_t;
 
 #define CLKEN_MASK		(0x3 << 24)
 #define CLKEN_MASK_SHIFT	24
@@ -350,7 +413,7 @@ typedef enum {
 	CLKEN__DISABLE = 0x0,
 	CLKEN__AUTOMATIC = 0x1,
 	CLKEN__FULL = 0x3,
-} lb_pixengcfg_clken_t;
+} pixengcfg_clken_t;
 
 int dpu_map_irq(struct dpu_soc *dpu, int irq);
 
@@ -419,6 +482,7 @@ void fetchdecode_clipoffset(struct dpu_fetchdecode *fd, unsigned int x,
 void fetchdecode_clipdimensions(struct dpu_fetchdecode *fd, unsigned int w,
 				unsigned int h);
 void fetchdecode_layerproperty(struct dpu_fetchdecode *fd, bool enable);
+bool fetchdecode_is_enabled(struct dpu_fetchdecode *fd);
 void fetchdecode_framedimensions(struct dpu_fetchdecode *fd, unsigned int w,
 				 unsigned int h);
 void fetchdecode_rgb_constantcolor(struct dpu_fetchdecode *fd,
@@ -428,6 +492,9 @@ void fetchdecode_yuv_constantcolor(struct dpu_fetchdecode *fd,
 void fetchdecode_controltrigger(struct dpu_fetchdecode *fd, bool trigger);
 int fetchdecode_fetchtype(struct dpu_fetchdecode *fd, fetchtype_t *type);
 shadow_load_req_t fetchdecode_to_shdldreq_t(struct dpu_fetchdecode *fd);
+u32 fetchdecode_get_vproc_mask(struct dpu_fetchdecode *fd);
+unsigned int fetchdecode_get_stream_id(struct dpu_fetchdecode *fd);
+void fetchdecode_set_stream_id(struct dpu_fetchdecode *fd, unsigned int id);
 struct dpu_fetchdecode *dpu_fd_get(struct dpu_soc *dpu, int id);
 void dpu_fd_put(struct dpu_fetchdecode *fd);
 
@@ -462,6 +529,24 @@ void framegen_disable_clock(struct dpu_framegen *fg);
 struct dpu_framegen *dpu_fg_get(struct dpu_soc *dpu, int id);
 void dpu_fg_put(struct dpu_framegen *fg);
 
+/* Horizontal Scaler Unit */
+struct dpu_hscaler;
+int hscaler_pixengcfg_dynamic_src_sel(struct dpu_hscaler *hs, hs_src_sel_t src);
+void hscaler_pixengcfg_clken(struct dpu_hscaler *hs, pixengcfg_clken_t clken);
+void hscaler_shden(struct dpu_hscaler *hs, bool enable);
+void hscaler_setup1(struct dpu_hscaler *hs, unsigned int src, unsigned int dst);
+void hscaler_setup2(struct dpu_hscaler *hs, u32 phase_offset);
+void hscaler_output_size(struct dpu_hscaler *hs, u32 line_num);
+void hscaler_filter_mode(struct dpu_hscaler *hs, scaler_filter_mode_t m);
+void hscaler_scale_mode(struct dpu_hscaler *hs, scaler_scale_mode_t m);
+void hscaler_mode(struct dpu_hscaler *hs, scaler_mode_t m);
+bool hscaler_is_enabled(struct dpu_hscaler *hs);
+dpu_block_id_t hscaler_get_block_id(struct dpu_hscaler *hs);
+unsigned int hscaler_get_stream_id(struct dpu_hscaler *hs);
+void hscaler_set_stream_id(struct dpu_hscaler *hs, unsigned int id);
+struct dpu_hscaler *dpu_hs_get(struct dpu_soc *dpu, int id);
+void dpu_hs_put(struct dpu_hscaler *hs);
+
 /* Layer Blend Unit */
 struct dpu_layerblend;
 int layerblend_pixengcfg_dynamic_prim_sel(struct dpu_layerblend *lb,
@@ -469,7 +554,7 @@ int layerblend_pixengcfg_dynamic_prim_sel(struct dpu_layerblend *lb,
 void layerblend_pixengcfg_dynamic_sec_sel(struct dpu_layerblend *lb,
 					  lb_sec_sel_t sec);
 void layerblend_pixengcfg_clken(struct dpu_layerblend *lb,
-				lb_pixengcfg_clken_t clken);
+				pixengcfg_clken_t clken);
 void layerblend_shden(struct dpu_layerblend *lb, bool enable);
 void layerblend_shdtoksel(struct dpu_layerblend *lb, lb_shadow_sel_t sel);
 void layerblend_shdldsel(struct dpu_layerblend *lb, lb_shadow_sel_t sel);
@@ -490,6 +575,45 @@ void tcon_cfg_videomode(struct dpu_tcon *tcon, struct drm_display_mode *m);
 struct dpu_tcon *dpu_tcon_get(struct dpu_soc *dpu, int id);
 void dpu_tcon_put(struct dpu_tcon *tcon);
 
+/* Vertical Scaler Unit */
+struct dpu_vscaler;
+int vscaler_pixengcfg_dynamic_src_sel(struct dpu_vscaler *vs, vs_src_sel_t src);
+void vscaler_pixengcfg_clken(struct dpu_vscaler *vs, pixengcfg_clken_t clken);
+void vscaler_shden(struct dpu_vscaler *vs, bool enable);
+void vscaler_setup1(struct dpu_vscaler *vs, unsigned int src, unsigned int dst);
+void vscaler_setup2(struct dpu_vscaler *vs, u32 phase_offset);
+void vscaler_setup3(struct dpu_vscaler *vs, u32 phase_offset);
+void vscaler_setup4(struct dpu_vscaler *vs, u32 phase_offset);
+void vscaler_setup5(struct dpu_vscaler *vs, u32 phase_offset);
+void vscaler_output_size(struct dpu_vscaler *vs, u32 line_num);
+void vscaler_field_mode(struct dpu_vscaler *vs, scaler_field_mode_t m);
+void vscaler_filter_mode(struct dpu_vscaler *vs, scaler_filter_mode_t m);
+void vscaler_scale_mode(struct dpu_vscaler *vs, scaler_scale_mode_t m);
+void vscaler_mode(struct dpu_vscaler *vs, scaler_mode_t m);
+bool vscaler_is_enabled(struct dpu_vscaler *vs);
+dpu_block_id_t vscaler_get_block_id(struct dpu_vscaler *vs);
+unsigned int vscaler_get_stream_id(struct dpu_vscaler *vs);
+void vscaler_set_stream_id(struct dpu_vscaler *vs, unsigned int id);
+struct dpu_vscaler *dpu_vs_get(struct dpu_soc *dpu, int id);
+void dpu_vs_put(struct dpu_vscaler *vs);
+
+struct dpu_hscaler *fetchdecode_get_hscaler(struct dpu_fetchdecode *fd);
+struct dpu_vscaler *fetchdecode_get_vscaler(struct dpu_fetchdecode *fd);
+
+bool dpu_vproc_has_hscale_cap(u32 cap_mask);
+bool dpu_vproc_has_vscale_cap(u32 cap_mask);
+
+u32 dpu_vproc_get_hscale_cap(u32 cap_mask);
+u32 dpu_vproc_get_vscale_cap(u32 cap_mask);
+
+/*
+ * to avoid on-the-fly/hot plane resource migration
+ * between two display interfaces
+ */
+#define DPU_PLANE_SRC_TO_DISP_STREAM0	BIT(0)
+#define DPU_PLANE_SRC_TO_DISP_STREAM1	BIT(1)
+#define DPU_PLANE_SRC_DISABLED		0
+
 #define MAX_FD_NUM	4
 #define MAX_LB_NUM	7
 struct dpu_plane_res {
@@ -497,7 +621,9 @@ struct dpu_plane_res {
 	struct dpu_extdst	*ed[2];
 	struct dpu_fetchdecode	*fd[MAX_FD_NUM];
 	struct dpu_framegen	*fg;
+	struct dpu_hscaler	*hs[2];
 	struct dpu_layerblend	*lb[MAX_LB_NUM];
+	struct dpu_vscaler	*vs[2];
 };
 
 /*
@@ -509,7 +635,17 @@ struct dpu_plane_grp {
 	struct list_head	list;
 	struct mutex		lock;
 	unsigned int		hw_plane_num;
+	unsigned int		hw_plane_hscaler_num;
+	unsigned int		hw_plane_vscaler_num;
 	unsigned int		id;
+	bool			has_vproc;
+	/*
+	 * used when assigning plane source
+	 * index:    0   1   2   3
+	 * source: fd0 fd1 fd2 fd3
+	 */
+	u32			src_mask;
+	u32			src_use_vproc_mask;
 };
 
 static inline struct dpu_plane_grp *plane_res_to_grp(struct dpu_plane_res *res)

@@ -21,9 +21,17 @@
 #include <video/dpu.h>
 #include "dpu-prv.h"
 
+#define FD_NUM				4
+
+static const u32 fd_vproc_cap[FD_NUM] = {
+	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4,
+	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5,
+	DPU_VPROC_CAP_HSCALER4 | DPU_VPROC_CAP_VSCALER4,
+	DPU_VPROC_CAP_HSCALER5 | DPU_VPROC_CAP_VSCALER5,
+};
+
 #define PIXENGCFG_DYNAMIC		0x8
 #define SRC_NUM				3
-#define FD_NUM				4
 static const fd_dynamic_src_sel_t fd_srcs[FD_NUM][SRC_NUM] = {
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO0, FD_SRC_FETCHDECODE2 },
 	{ FD_SRC_DISABLE, FD_SRC_FETCHECO1, FD_SRC_FETCHDECODE3 },
@@ -74,6 +82,8 @@ struct dpu_fetchdecode {
 	struct dpu_soc *dpu;
 	fetchtype_t fetchtype;
 	shadow_load_req_t shdlreq;
+	/* see DPU_PLANE_SRC_xxx */
+	unsigned int stream_id;
 };
 
 static inline u32 dpu_pec_fd_read(struct dpu_fetchdecode *fd,
@@ -256,7 +266,7 @@ void fetchdecode_layerproperty(struct dpu_fetchdecode *fd, bool enable)
 	u32 val;
 
 	if (enable)
-		val = SOURCEBUFFERENABLE | CLIPWINDOWENABLE;
+		val = SOURCEBUFFERENABLE;
 	else
 		val = 0;
 
@@ -265,6 +275,18 @@ void fetchdecode_layerproperty(struct dpu_fetchdecode *fd, bool enable)
 	mutex_unlock(&fd->mutex);
 }
 EXPORT_SYMBOL_GPL(fetchdecode_layerproperty);
+
+bool fetchdecode_is_enabled(struct dpu_fetchdecode *fd)
+{
+	u32 val;
+
+	mutex_lock(&fd->mutex);
+	val = dpu_fd_read(fd, LAYERPROPERTY0);
+	mutex_unlock(&fd->mutex);
+
+	return !!(val & SOURCEBUFFERENABLE);
+}
+EXPORT_SYMBOL_GPL(fetchdecode_is_enabled);
 
 void fetchdecode_clipdimensions(struct dpu_fetchdecode *fd, unsigned int w,
 				unsigned int h)
@@ -413,6 +435,70 @@ shadow_load_req_t fetchdecode_to_shdldreq_t(struct dpu_fetchdecode *fd)
 	return t;
 }
 EXPORT_SYMBOL_GPL(fetchdecode_to_shdldreq_t);
+
+u32 fetchdecode_get_vproc_mask(struct dpu_fetchdecode *fd)
+{
+	return fd_vproc_cap[fd->id];
+}
+EXPORT_SYMBOL_GPL(fetchdecode_get_vproc_mask);
+
+struct dpu_hscaler *fetchdecode_get_hscaler(struct dpu_fetchdecode *fd)
+{
+	struct dpu_soc *dpu = fd->dpu;
+
+	switch (fd->id) {
+	case 0:
+	case 2:
+		return dpu->hs_priv[0];
+	case 1:
+	case 3:
+		return dpu->hs_priv[1];
+	default:
+		WARN_ON(1);
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+EXPORT_SYMBOL_GPL(fetchdecode_get_hscaler);
+
+struct dpu_vscaler *fetchdecode_get_vscaler(struct dpu_fetchdecode *fd)
+{
+	struct dpu_soc *dpu = fd->dpu;
+
+	switch (fd->id) {
+	case 0:
+	case 2:
+		return dpu->vs_priv[0];
+	case 1:
+	case 3:
+		return dpu->vs_priv[1];
+	default:
+		WARN_ON(1);
+	}
+
+	return ERR_PTR(-EINVAL);
+}
+EXPORT_SYMBOL_GPL(fetchdecode_get_vscaler);
+
+unsigned int fetchdecode_get_stream_id(struct dpu_fetchdecode *fd)
+{
+	return fd->stream_id;
+}
+EXPORT_SYMBOL_GPL(fetchdecode_get_stream_id);
+
+void fetchdecode_set_stream_id(struct dpu_fetchdecode *fd, unsigned int id)
+{
+	switch (id) {
+	case DPU_PLANE_SRC_TO_DISP_STREAM0:
+	case DPU_PLANE_SRC_TO_DISP_STREAM1:
+	case DPU_PLANE_SRC_DISABLED:
+		fd->stream_id = id;
+		break;
+	default:
+		WARN_ON(1);
+	}
+}
+EXPORT_SYMBOL_GPL(fetchdecode_set_stream_id);
 
 struct dpu_fetchdecode *dpu_fd_get(struct dpu_soc *dpu, int id)
 {
