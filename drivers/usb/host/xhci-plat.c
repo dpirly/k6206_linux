@@ -243,7 +243,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		xhci->quirks |= XHCI_LPM_SUPPORT;
 
 
-	if (device_property_read_bool(&pdev->dev, "quirk-broken-port-ped"))
+	if (device_property_read_bool(sysdev, "quirk-broken-port-ped"))
 		xhci->quirks |= XHCI_BROKEN_PORT_PED;
 
 	hcd->usb_phy = devm_usb_get_phy_by_phandle(sysdev, "usb-phy", 0);

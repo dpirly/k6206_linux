@@ -107,9 +107,6 @@ gctCONST_STRING _DispatchText[] =
     gcmDEFINE2TEXT(gcvHAL_SET_PROFILE_SETTING),
     gcmDEFINE2TEXT(gcvHAL_READ_ALL_PROFILE_REGISTERS),
     gcmDEFINE2TEXT(gcvHAL_PROFILE_REGISTERS_2D),
-#if VIVANTE_PROFILER_PERDRAW
-    gcmDEFINE2TEXT(gcvHAL_READ_PROFILER_REGISTER_SETTING),
-#endif
     gcmDEFINE2TEXT(gcvHAL_READ_ALL_PROFILE_NEW_REGISTERS),
     gcmDEFINE2TEXT(gcvHAL_READ_PROFILER_NEW_REGISTER_SETTING),
     gcmDEFINE2TEXT(gcvHAL_SET_POWER_MANAGEMENT_STATE),
@@ -127,7 +124,6 @@ gctCONST_STRING _DispatchText[] =
     gcmDEFINE2TEXT(gcvHAL_CHIP_INFO),
     gcmDEFINE2TEXT(gcvHAL_ATTACH),
     gcmDEFINE2TEXT(gcvHAL_DETACH),
-    gcmDEFINE2TEXT(gcvHAL_COMPOSE),
     gcmDEFINE2TEXT(gcvHAL_SET_TIMEOUT),
     gcmDEFINE2TEXT(gcvHAL_GET_FRAME_INFO),
     gcmDEFINE2TEXT(gcvHAL_DUMP_GPU_PROFILE),
@@ -570,6 +566,7 @@ gckKERNEL_Construct(
                         : gcdGPU_TIMEOUT
                         ;
 
+        /* Initialize virtual command buffer. */
 #if (defined(LINUX) || defined(__QNXNTO__)) && !defined(EMULATOR) && !gcdALLOC_CMD_FROM_RESERVE
         kernel->virtualCommandBuffer = gcvTRUE;
 #else
@@ -616,7 +613,7 @@ gckKERNEL_Construct(
         gcmkONERROR(
             gckCOMMAND_Construct(kernel, &kernel->command));
 
-        if (gckHARDWARE_IsFeatureAvailable(kernel->hardware, gcvFEATURE_BLT_ENGINE))
+        if (gckHARDWARE_IsFeatureAvailable(kernel->hardware, gcvFEATURE_ASYNC_BLIT))
         {
             /* Construct the gckASYNC_COMMAND object for BLT engine. */
             gcmkONERROR(gckASYNC_COMMAND_Construct(kernel, &kernel->asyncCommand));
@@ -995,7 +992,6 @@ gckKERNEL_AllocateLinearMemory(
     secure     = Flag & gcvALLOC_FLAG_SECURITY;
 
 #if gcdALLOC_ON_FAULT
-    /* VIV: Force all render target is allocated on fault. */
     if (Type == gcvSURF_RENDER_TARGET)
     {
         Flag |= gcvALLOC_FLAG_ALLOC_ON_FAULT;
@@ -1786,7 +1782,7 @@ gckKERNEL_WaitFence(
     gcmkONERROR(gckVIDMEM_HANDLE_LookupAndReference(Kernel, Handle, &node));
 
     /* Wait for fence of all engines. */
-    for (i = 0; i < gcvENGINE_COUNT; i++)
+    for (i = 0; i < gcvENGINE_GPU_ENGINE_COUNT; i++)
     {
         gckFENCE_SYNC sync = &node->sync[i];
 
@@ -1922,8 +1918,12 @@ gckKERNEL_Dispatch(
     case gcvHAL_GET_BASE_ADDRESS:
         /* Get base address. */
         Interface->u.GetBaseAddress.baseAddress = Kernel->hardware->baseAddress;
-        Interface->u.GetBaseAddress.flatMappingStart = Kernel->mmu->flatMappingStart;
-        Interface->u.GetBaseAddress.flatMappingEnd = Kernel->mmu->flatMappingEnd;
+        Interface->u.GetBaseAddress.flatMappingRangeCount = Kernel->mmu->flatMappingRangeCount;
+        if (Kernel->mmu->flatMappingRangeCount)
+        {
+            gckOS_MemCopy(Interface->u.GetBaseAddress.flatMappingRanges, Kernel->mmu->flatMappingRanges,
+                gcmSIZEOF(gcsFLAT_MAPPING_RANGE) * Kernel->mmu->flatMappingRangeCount);
+        }
         break;
 
     case gcvHAL_QUERY_VIDEO_MEMORY:
@@ -1972,7 +1972,8 @@ gckKERNEL_Dispatch(
             gckKERNEL_UnmapMemory(Kernel,
                                   physical,
                                   (gctSIZE_T) Interface->u.UnmapMemory.bytes,
-                                  gcmUINT64_TO_PTR(Interface->u.UnmapMemory.logical)));
+                                  gcmUINT64_TO_PTR(Interface->u.UnmapMemory.logical),
+                                  processID));
         break;
 
     case gcvHAL_ALLOCATE_NON_PAGED_MEMORY:
@@ -2164,9 +2165,9 @@ gckKERNEL_Dispatch(
 
         commitMutexAcquired = gcvTRUE;
         /* Commit an event queue. */
-        if (Interface->u.Event.engine == gcvENGINE_BLT)
+        if (Interface->engine == gcvENGINE_BLT)
         {
-            if (!gckHARDWARE_IsFeatureAvailable(Kernel->hardware, gcvFEATURE_BLT_ENGINE))
+            if (!gckHARDWARE_IsFeatureAvailable(Kernel->hardware, gcvFEATURE_ASYNC_BLIT))
             {
                 gcmkONERROR(gcvSTATUS_NOT_SUPPORTED);
             }
@@ -2192,11 +2193,11 @@ gckKERNEL_Dispatch(
         commitMutexAcquired = gcvTRUE;
 
         /* Commit a command and context buffer. */
-        if (Interface->u.Commit.engine == gcvENGINE_BLT)
+        if (Interface->engine == gcvENGINE_BLT)
         {
             gctUINT64 *commandBuffers = gcmUINT64_TO_PTR(Interface->u.Commit.commandBuffer);
 
-            if (!gckHARDWARE_IsFeatureAvailable(Kernel->hardware, gcvFEATURE_BLT_ENGINE))
+            if (!gckHARDWARE_IsFeatureAvailable(Kernel->hardware, gcvFEATURE_ASYNC_BLIT))
             {
                 gcmkONERROR(gcvSTATUS_NOT_SUPPORTED);
             }
@@ -2214,7 +2215,8 @@ gckKERNEL_Dispatch(
         }
         else
         {
-            if (Interface->u.Commit.count > 1 && Interface->u.Commit.engine == gcvENGINE_RENDER)
+            /* XXX: Workaround nxp dual GPU hang issue, bug #17898, Jira IMX-603. */
+            if (Interface->u.Commit.count > 1 && Interface->engine == gcvENGINE_RENDER)
             {
                 gctUINT32 i;
 
@@ -2224,8 +2226,8 @@ gckKERNEL_Dispatch(
                     gckKERNEL kernel = Device->map[type].kernels[i];
 
                     gcmkONERROR(gckOS_Broadcast(kernel->os,
-                                            kernel->hardware,
-                                            gcvBROADCAST_GPU_COMMIT));
+                                                kernel->hardware,
+                                                gcvBROADCAST_GPU_COMMIT));
                 }
             }
 
@@ -2247,7 +2249,7 @@ gckKERNEL_Dispatch(
                 gcmkONERROR(status);
             }
 
-            if (Interface->u.Commit.count > 1 && Interface->u.Commit.engine == gcvENGINE_RENDER)
+            if (Interface->u.Commit.count > 1 && Interface->engine == gcvENGINE_RENDER)
             {
                 gctUINT32 i;
 
@@ -2473,7 +2475,7 @@ gckKERNEL_Dispatch(
         break;
 
     case gcvHAL_READ_ALL_PROFILE_REGISTERS:
-#if VIVANTE_PROFILER && VIVANTE_PROFILER_CONTEXT
+#if VIVANTE_PROFILER
         if (Kernel->profileSyncMode)
         {
             /* Read profile data according to the context. */
@@ -2544,9 +2546,6 @@ gckKERNEL_Dispatch(
 
     case gcvHAL_SET_PROFILE_SETTING:
 #if VIVANTE_PROFILER
-#if VIVANTE_PROFILER_PROBE
-        gckHARDWARE_InitProfiler(Kernel->hardware);
-#else
         /* Set profile setting */
         if(Kernel->hardware->gpuProfiler)
         {
@@ -2565,19 +2564,10 @@ gckKERNEL_Dispatch(
             break;
         }
 #endif
-#endif
 
         status = gcvSTATUS_OK;
         break;
 
-#if VIVANTE_PROFILER_PERDRAW
-    case gcvHAL_READ_PROFILER_REGISTER_SETTING:
-    #if VIVANTE_PROFILER
-        Kernel->profileCleanRegister = Interface->u.SetProfilerRegisterClear.bclear;
-    #endif
-        status = gcvSTATUS_OK;
-        break;
-#endif
     case gcvHAL_READ_PROFILER_NEW_REGISTER_SETTING:
         Kernel->profileCleanRegister = Interface->u.SetProfilerRegisterClear.bclear;
         status = gcvSTATUS_OK;
@@ -2613,7 +2603,7 @@ gckKERNEL_Dispatch(
                gckOS_DumpBuffer(Kernel->os,
                                 Interface->u.Debug.message,
                                 gcmSIZEOF(Interface->u.Debug.message),
-                                gceDUMP_BUFFER_FROM_USER,
+                                gcvDUMP_BUFFER_FROM_USER,
                                 gcvTRUE);
             }
             else
@@ -2621,7 +2611,7 @@ gckKERNEL_Dispatch(
                gckOS_DumpBuffer(Kernel->os,
                                 Interface->u.Debug.message,
                                 Interface->u.Debug.messageSize,
-                                gceDUMP_BUFFER_FROM_USER,
+                                gcvDUMP_BUFFER_FROM_USER,
                                 gcvTRUE);
             }
         }
@@ -2804,14 +2794,6 @@ gckKERNEL_Dispatch(
                               gcmNAME_TO_PTR(Interface->u.Detach.context)));
 
         gcmRELEASE_NAME(Interface->u.Detach.context);
-        break;
-
-    case gcvHAL_COMPOSE:
-        Interface->u.Compose.physical = gcmPTR_TO_UINT64(gcmNAME_TO_PTR(Interface->u.Compose.physical));
-        /* Start composition. */
-        gcmkONERROR(
-            gckEVENT_Compose(Kernel->eventObj,
-                             &Interface->u.Compose));
         break;
 
     case gcvHAL_GET_FRAME_INFO:

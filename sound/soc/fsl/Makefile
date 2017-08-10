@@ -77,6 +77,7 @@ snd-soc-imx-mc13783-objs := imx-mc13783.o
 snd-soc-imx-mqs-objs := imx-mqs.o
 snd-soc-imx-si476x-objs := imx-si476x.o
 snd-soc-imx-hdmi-objs := imx-hdmi.o
+snd-soc-imx-cdnhdmi-objs := imx-cdnhdmi.o
 snd-soc-imx-rpmsg-objs := imx-rpmsg.o
 snd-soc-imx-tas5760-objs := imx-tas5760.o
 snd-soc-imx-amix-objs := imx-amix.o
@@ -105,5 +106,6 @@ obj-$(CONFIG_SND_SOC_IMX_TAS5760) += snd-soc-imx-tas5760.o
 snd-soc-fsl-asoc-card-objs := fsl-asoc-card.o
 obj-$(CONFIG_SND_SOC_FSL_ASOC_CARD) += snd-soc-fsl-asoc-card.o
 obj-$(CONFIG_SND_SOC_IMX_AMIX) += snd-soc-imx-amix.o
+obj-$(CONFIG_SND_SOC_IMX_CDNHDMI) += snd-soc-imx-cdnhdmi.o
 
 AFLAGS_hdmi_pcm.o := -march=armv7-a -mtune=cortex-a9 -mfpu=neon -mfloat-abi=softfp

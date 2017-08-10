@@ -35,6 +35,9 @@
  * parent - fixed parent.  No clk_set_parent support
  */
 
+#define CLK_GATE_SCU_HW_SW_EN	(BIT(0) | BIT(1))
+#define CLK_GATE_SCU_SW_EN	BIT(1)
+
 struct clk_gate_scu {
 	struct clk_hw hw;
 	void __iomem	*reg;
@@ -80,9 +83,9 @@ static int clk_gate_scu_enable(struct clk_hw *hw)
 	if (gate->reg) {
 		reg = readl(gate->reg);
 		if (gate->hw_gate)
-			reg |= (0x3 << gate->bit_idx);
+			reg |= (CLK_GATE_SCU_HW_SW_EN << gate->bit_idx);
 		else
-			reg |= (0x2 << gate->bit_idx);
+			reg |= (CLK_GATE_SCU_SW_EN << gate->bit_idx);
 		writel(reg, gate->reg);
 	}
 
@@ -101,9 +104,9 @@ static void clk_gate_scu_disable(struct clk_hw *hw)
 	if (gate->reg) {
 		reg = readl(gate->reg);
 		if (gate->hw_gate)
-			reg &= ~(0x3 << gate->bit_idx);
+			reg &= ~(CLK_GATE_SCU_HW_SW_EN << gate->bit_idx);
 		else
-			reg &= ~(0x2 << gate->bit_idx);
+			reg &= ~(CLK_GATE_SCU_SW_EN << gate->bit_idx);
 		writel(reg, gate->reg);
 	}
 }
@@ -137,11 +140,28 @@ static void clk_gate_scu_unprepare(struct clk_hw *hw)
 		pr_err("clk gate scu unprepare clk fail!\n");
 }
 
+static unsigned long clk_gate_scu_recalc_rate(struct clk_hw *hw,
+						  unsigned long parent_rate)
+{
+	struct clk_gate_scu *clk = to_clk_gate_scu(hw);
+	sc_err_t sci_err;
+	sc_pm_clock_rate_t rate = 0;
+
+	if (!ccm_ipc_handle)
+		return 0;
+
+	sci_err = sc_pm_get_clock_rate(ccm_ipc_handle, clk->rsrc_id,
+		clk->clk_type, &rate);
+
+	return sci_err ? 0 : rate;
+}
+
 static struct clk_ops clk_gate_scu_ops = {
 	.prepare = clk_gate_scu_prepare,
 	.unprepare = clk_gate_scu_unprepare,
 	.enable = clk_gate_scu_enable,
 	.disable = clk_gate_scu_disable,
+	.recalc_rate = clk_gate_scu_recalc_rate,
 };
 
 struct clk *clk_register_gate_scu(struct device *dev, const char *name,

@@ -81,6 +81,14 @@ config FB_MXC_HDMI
 	help
 	  Driver for the on-chip MXC HDMI controller.
 
+config FB_MX8_HDMI
+	tristate "IMX 8 SOC HDMI"
+	depends on FB_IMX64 && ARCH_FSL_IMX8MQ
+	depends on FB_MXC_DISP_FRAMEWORK
+	help
+	  Candece HDMI driver which includes
+	  core and PHY management.
+
 config FB_MXC_EDID
      depends on FB_MXC && I2C
      tristate "MXC EDID support"
@@ -126,3 +134,11 @@ config FB_MXC_EINK_V2_PANEL
 config FB_MXC_EINK_AUTO_UPDATE_MODE
 	bool "E-Ink Auto-update Mode Support"
 	depends on FB_MXC_EINK_PANEL
+
+config FB_DCSS
+	tristate "DCSS multi-layer framebuffer support"
+	depends on FB_MXC && ARCH_FSL_IMX8MQ
+	default y
+	help
+	  Framebuffer support the DCSS controller in imx8mq platform.
+	  DCSS support 3 layer compsition.
