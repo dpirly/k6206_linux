@@ -12,6 +12,7 @@ obj-$(CONFIG_SND_SOC_P1022_RDK) += snd-soc-p1022-rdk.o
 
 # Freescale SSI/DMA/SAI/SPDIF Support
 snd-soc-fsl-acm-objs := fsl_acm.o
+snd-soc-fsl-amix-objs := fsl_amix.o
 snd-soc-fsl-asrc-objs := fsl_asrc.o fsl_asrc_dma.o
 snd-soc-fsl-dma-workaround-objs := fsl_dma_workaround.o
 snd-soc-fsl-hifi4-objs := fsl_hifi4.o
@@ -25,6 +26,7 @@ snd-soc-fsl-dma-objs := fsl_dma.o
 snd-soc-fsl-rpmsg-i2s-objs := fsl_rpmsg_i2s.o
 snd-soc-fsl-hdmi-objs := fsl_hdmi.o
 obj-$(CONFIG_SND_SOC_FSL_ACM) += snd-soc-fsl-acm.o
+obj-$(CONFIG_SND_SOC_FSL_AMIX) += snd-soc-fsl-amix.o
 obj-$(CONFIG_SND_SOC_FSL_ASRC) += snd-soc-fsl-asrc.o
 obj-$(CONFIG_SND_SOC_FSL_HIFI4) += snd-soc-fsl-hifi4.o
 obj-$(CONFIG_SND_SOC_FSL_SAI) += snd-soc-fsl-sai.o
@@ -77,6 +79,7 @@ snd-soc-imx-si476x-objs := imx-si476x.o
 snd-soc-imx-hdmi-objs := imx-hdmi.o
 snd-soc-imx-rpmsg-objs := imx-rpmsg.o
 snd-soc-imx-tas5760-objs := imx-tas5760.o
+snd-soc-imx-amix-objs := imx-amix.o
 
 obj-$(CONFIG_SND_SOC_EUKREA_TLV320) += snd-soc-eukrea-tlv320.o
 obj-$(CONFIG_SND_SOC_PHYCORE_AC97) += snd-soc-phycore-ac97.o
@@ -101,5 +104,6 @@ obj-$(CONFIG_SND_SOC_IMX_TAS5760) += snd-soc-imx-tas5760.o
 
 snd-soc-fsl-asoc-card-objs := fsl-asoc-card.o
 obj-$(CONFIG_SND_SOC_FSL_ASOC_CARD) += snd-soc-fsl-asoc-card.o
+obj-$(CONFIG_SND_SOC_IMX_AMIX) += snd-soc-imx-amix.o
 
 AFLAGS_hdmi_pcm.o := -march=armv7-a -mtune=cortex-a9 -mfpu=neon -mfloat-abi=softfp

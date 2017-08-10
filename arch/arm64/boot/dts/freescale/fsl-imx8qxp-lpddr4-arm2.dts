@@ -93,6 +93,12 @@
 		status = "okay";
 	};
 
+	sound-amix-sai {
+		compatible = "fsl,imx-audio-amix";
+		model = "amix-audio-sai";
+		dais = <&sai4>, <&sai5>;
+		amix-controller = <&amix>;
+	};
 };
 
 &acm {
@@ -123,6 +129,30 @@
 	assigned-clock-parents = <&clk IMX8QXP_AUD_ACM_AUD_PLL_CLK0_CLK>;
 	assigned-clock-rates = <0>, <24576000>;
 	dmas = <&edma2 23 0 3>, <&edma2 21 0 2>;
+	status = "okay";
+};
+
+&amix {
+	status = "okay";
+};
+
+&sai4 {
+	assigned-clocks = <&clk IMX8QXP_ACM_SAI4_MCLK_SEL>,
+			<&clk IMX8QXP_AUD_SAI_4_MCLK>;
+	assigned-clock-parents = <&clk IMX8QXP_AUD_ACM_AUD_PLL_CLK0_CLK>;
+	assigned-clock-rates = <0>, <24576000>;
+	fsl,sai-asynchronous;
+	fsl,txm-rxs;
+	status = "okay";
+};
+
+&sai5 {
+	assigned-clocks = <&clk IMX8QXP_ACM_SAI5_MCLK_SEL>,
+			<&clk IMX8QXP_AUD_SAI_5_MCLK>;
+	assigned-clock-parents = <&clk IMX8QXP_AUD_ACM_AUD_PLL_CLK0_CLK>;
+	assigned-clock-rates = <0>, <24576000>;
+	fsl,sai-asynchronous;
+	fsl,txm-rxs;
 	status = "okay";
 };
 
@@ -404,11 +434,9 @@
 &fec1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_fec1>;
-	phy-mode = "rgmii";
+	phy-mode = "rgmii-id";
 	phy-handle = <&ethphy0>;
 	fsl,magic-packet;
-	fsl,rgmii_txc_dly;
-	fsl,rgmii_rxc_dly;
 	status = "okay";
 
 	mdio {
@@ -552,7 +580,7 @@
 &mlb {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_mlb>;
-	status = "okay";
+	status = "disabled";
 };
 
 &usdhc1 {

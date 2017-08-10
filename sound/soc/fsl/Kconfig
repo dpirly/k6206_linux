@@ -32,6 +32,15 @@ config SND_SOC_FSL_ACM
 	  This option is only useful for out-of-tree drivers since
 	  in-tree drivers select it automatically.
 
+config SND_SOC_FSL_AMIX
+	tristate "Audio Mixer (AMIX) module support"
+	select REGMAP_MMIO
+	help
+	  Say Y if you want to add Audio Mixer (AMIX)
+	  support for the Freescale CPUs.
+	  This option is only useful for out-of-tree drivers since
+	  in-tree drivers select it automatically.
+
 config SND_SOC_FSL_SSI
 	tristate "Synchronous Serial Interface module (SSI) support"
 	select SND_SOC_IMX_PCM_DMA if SND_IMX_SOC != n
@@ -470,6 +479,14 @@ config SND_SOC_IMX_TAS5760
           SoC Audio support for i.MX boards with TAS5760
           Say Y if you want to add support for SoC audio on an i.MX board with
           a tas5760 codec.
+
+config SND_SOC_IMX_AMIX
+	tristate "SoC Audio support for i.MX boards with AMIX"
+	select SND_SOC_FSL_AMIX
+	help
+	  SoC Audio support for i.MX boards with AMIX
+	  Say Y if you want to add support for SoC audio on an i.MX board with
+	  an AMIX.
 
 endif # SND_IMX_SOC
 
