@@ -42,6 +42,14 @@
 		};
 	};
 
+	modem_reset: modem-reset {
+		compatible = "gpio-reset";
+		reset-gpios = <&pca9557_b 7 GPIO_ACTIVE_LOW>;
+		reset-delay-us = <2000>;
+		reset-post-delay-ms = <40>;
+		#reset-cells = <0>;
+	};
+
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -162,6 +170,20 @@
 				SC_P_ENET1_RGMII_RXD1_CONN_ENET1_RGMII_RXD1	0x06000048
 				SC_P_ENET1_RGMII_RXD2_CONN_ENET1_RGMII_RXD2	0x06000048
 				SC_P_ENET1_RGMII_RXD3_CONN_ENET1_RGMII_RXD3	0x06000048
+			>;
+		};
+
+		pinctrl_lvds0_lpi2c1: lvds0lpi2c1grp {
+			fsl,pins = <
+				SC_P_LVDS0_I2C1_SCL_LVDS0_I2C1_SCL	0xc600004c
+				SC_P_LVDS0_I2C1_SDA_LVDS0_I2C1_SDA	0xc600004c
+			>;
+		};
+
+		pinctrl_lvds1_lpi2c1: lvds1lpi2c1grp {
+			fsl,pins = <
+				SC_P_LVDS1_I2C1_SCL_LVDS1_I2C1_SCL	0xc600004c
+				SC_P_LVDS1_I2C1_SDA_LVDS1_I2C1_SDA	0xc600004c
 			>;
 		};
 
@@ -342,30 +364,6 @@
 	status = "okay";
 };
 
-&framebuffer1 {
-	status = "okay";
-};
-
-&framebuffer3 {
-	status = "okay";
-};
-
-&imxdpu0 {
-	status = "okay";
-};
-
-&imxdpu1 {
-	status = "okay";
-};
-
-&lvds0 {
-	status = "okay";
-};
-
-&lvds1 {
-	status = "okay";
-};
-
 &usdhc1 {
 	pinctrl-names = "default", "state_100mhz", "state_200mhz";
 	pinctrl-0 = <&pinctrl_usdhc1>;
@@ -426,7 +424,7 @@
 	phy-handle = <&ethphy1>;
 	fsl,ar8031-phy-fixup;
 	fsl,magic-packet;
-	status = "disabled";
+	status = "okay";
 };
 
 &flexcan1 {
@@ -548,32 +546,6 @@
 	};
 };
 
-&i2c1_lvds0 {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	pinctrl-names = "default";
-	clock-frequency = <100000>;
-	status = "okay";
-
-	it6263-0@4c {
-		compatible = "ITE,it6263";
-		reg = <0x4c>;
-	};
-};
-
-&i2c1_lvds1 {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	pinctrl-names = "default";
-	clock-frequency = <100000>;
-	status = "okay";
-
-	it6263-1@4c {
-		compatible = "ITE,it6263";
-		reg = <0x4c>;
-	};
-};
-
 &lpspi0 {
 	#address-cells = <1>;
 	#size-cells = <0>;
@@ -597,6 +569,7 @@
 &lpuart1 { /* BT */
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_lpuart1>;
+	resets = <&modem_reset>;
 	status = "okay";
 };
 
@@ -615,5 +588,13 @@
 };
 
 &imx8_gpu_ss {
+	status = "okay";
+};
+
+&dpu1 {
+	status = "okay";
+};
+
+&dpu2 {
 	status = "okay";
 };

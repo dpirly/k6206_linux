@@ -216,7 +216,7 @@ static int fsl_asrc_dmaconfig(struct fsl_asrc_pair *pair, struct dma_chan *chan,
 		return -EINVAL;
 	}
 
-	ret = dma_map_sg(NULL, sg, sg_nent, slave_config.direction);
+	ret = dma_map_sg(&asrc_priv->pdev->dev, sg, sg_nent, slave_config.direction);
 	if (ret != sg_nent) {
 		pair_err("failed to map DMA sg for %sput task\n", DIR_STR(dir));
 		return -EINVAL;
@@ -331,17 +331,18 @@ int fsl_asrc_process_buffer_pre(struct completion *complete,
 	return 0;
 }
 
-#define mxc_asrc_dma_umap(m2m) \
+#define mxc_asrc_dma_umap(dev, m2m) \
 	do { \
-		dma_unmap_sg(NULL, m2m->sg[IN], m2m->sg_nodes[IN], \
+		dma_unmap_sg(dev, m2m->sg[IN], m2m->sg_nodes[IN], \
 			     DMA_MEM_TO_DEV); \
-		dma_unmap_sg(NULL, m2m->sg[OUT], m2m->sg_nodes[OUT], \
+		dma_unmap_sg(dev, m2m->sg[OUT], m2m->sg_nodes[OUT], \
 			     DMA_DEV_TO_MEM); \
 	} while (0)
 
 int fsl_asrc_process_buffer(struct fsl_asrc_pair *pair,
 			    struct asrc_convert_buffer *pbuf)
 {
+	struct fsl_asrc *asrc_priv = pair->asrc_priv;
 	struct fsl_asrc_m2m *m2m = pair->private;
 	enum asrc_pair_index index = pair->index;
 	unsigned long lock_flags;
@@ -350,18 +351,18 @@ int fsl_asrc_process_buffer(struct fsl_asrc_pair *pair,
 	/* Check input task first */
 	ret = fsl_asrc_process_buffer_pre(&m2m->complete[IN], index, IN);
 	if (ret) {
-		mxc_asrc_dma_umap(m2m);
+		mxc_asrc_dma_umap(&asrc_priv->pdev->dev, m2m);
 		return ret;
 	}
 
 	/* ...then output task*/
 	ret = fsl_asrc_process_buffer_pre(&m2m->complete[OUT], index, OUT);
 	if (ret) {
-		mxc_asrc_dma_umap(m2m);
+		mxc_asrc_dma_umap(&asrc_priv->pdev->dev, m2m);
 		return ret;
 	}
 
-	mxc_asrc_dma_umap(m2m);
+	mxc_asrc_dma_umap(&asrc_priv->pdev->dev, m2m);
 
 	/* Fetch the remaining data */
 	spin_lock_irqsave(&m2m->lock, lock_flags);
@@ -810,7 +811,6 @@ static int fsl_asrc_open(struct inode *inode, struct file *file)
 	struct fsl_asrc_pair *pair;
 	struct fsl_asrc_m2m *m2m;
 	int ret;
-	int i;
 
 	ret = signal_pending(current);
 	if (ret) {
@@ -838,11 +838,7 @@ static int fsl_asrc_open(struct inode *inode, struct file *file)
 
 	file->private_data = pair;
 
-	clk_prepare_enable(asrc_priv->mem_clk);
-	clk_prepare_enable(asrc_priv->ipg_clk);
-	clk_prepare_enable(asrc_priv->spba_clk);
-	for (i = 0; i < ASRC_CLK_MAX_NUM; i++)
-		clk_prepare_enable(asrc_priv->asrck_clk[i]);
+	pm_runtime_get_sync(dev);
 
 	return 0;
 out:
@@ -856,8 +852,8 @@ static int fsl_asrc_close(struct inode *inode, struct file *file)
 	struct fsl_asrc_pair *pair = file->private_data;
 	struct fsl_asrc_m2m *m2m = pair->private;
 	struct fsl_asrc *asrc_priv = pair->asrc_priv;
+	struct device *dev = &asrc_priv->pdev->dev;
 	unsigned long lock_flags;
-	int i;
 
 	if (m2m->asrc_active) {
 		m2m->asrc_active = 0;
@@ -893,11 +889,7 @@ static int fsl_asrc_close(struct inode *inode, struct file *file)
 	spin_unlock_irqrestore(&asrc_priv->lock, lock_flags);
 	file->private_data = NULL;
 
-	for (i = 0; i < ASRC_CLK_MAX_NUM; i++)
-		clk_disable_unprepare(asrc_priv->asrck_clk[i]);
-	clk_disable_unprepare(asrc_priv->spba_clk);
-	clk_disable_unprepare(asrc_priv->ipg_clk);
-	clk_disable_unprepare(asrc_priv->mem_clk);
+	pm_runtime_put_sync(dev);
 
 	return 0;
 }
