@@ -39,6 +39,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 
+#include <linux/bpf-cgroup.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
 
@@ -131,6 +132,14 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
 
 static int ip6_finish_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
+	int ret;
+
+	ret = BPF_CGROUP_RUN_PROG_INET_EGRESS(sk, skb);
+	if (ret) {
+		kfree_skb(skb);
+		return ret;
+	}
+
 	if ((skb->len > ip6_skb_dst_mtu(skb) && !skb_is_gso(skb)) ||
 	    dst_allfrag(skb_dst(skb)) ||
 	    (IP6CB(skb)->frag_max_size && skb->len > IP6CB(skb)->frag_max_size))
@@ -586,7 +595,10 @@ int ip6_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 	int ptr, offset = 0, err = 0;
 	u8 *prevhdr, nexthdr = 0;
 
-	hlen = ip6_find_1stfragopt(skb, &prevhdr);
+	err = ip6_find_1stfragopt(skb, &prevhdr);
+	if (err < 0)
+		goto fail;
+	hlen = err;
 	nexthdr = *prevhdr;
 
 	mtu = ip6_skb_dst_mtu(skb);
@@ -1444,6 +1456,11 @@ alloc_new_skb:
 			 */
 			alloclen += sizeof(struct frag_hdr);
 
+			copy = datalen - transhdrlen - fraggap;
+			if (copy < 0) {
+				err = -EINVAL;
+				goto error;
+			}
 			if (transhdrlen) {
 				skb = sock_alloc_send_skb(sk,
 						alloclen + hh_len,
@@ -1493,13 +1510,9 @@ alloc_new_skb:
 				data += fraggap;
 				pskb_trim_unique(skb_prev, maxfraglen);
 			}
-			copy = datalen - transhdrlen - fraggap;
-
-			if (copy < 0) {
-				err = -EINVAL;
-				kfree_skb(skb);
-				goto error;
-			} else if (copy > 0 && getfrag(from, data + transhdrlen, offset, copy, fraggap, skb) < 0) {
+			if (copy > 0 &&
+			    getfrag(from, data + transhdrlen, offset,
+				    copy, fraggap, skb) < 0) {
 				err = -EFAULT;
 				kfree_skb(skb);
 				goto error;
