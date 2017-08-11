@@ -1165,9 +1165,11 @@ static int dcss_init_fbinfo(struct fb_info *fbi)
 	if (cinfo->channel_id == DCSS_CHAN_MAIN)
 		/* main channel is for graphic */
 		var->grayscale = V4L2_PIX_FMT_ARGB32;
-	else
+	else {
 		/* other channels are for video */
 		var->grayscale = V4L2_PIX_FMT_NV12;
+		sprintf(fix->id, "FG");
+	}
 
 	/* Allocate memory buffer: Maybe need alignment */
 	fix->smem_len = (fix->line_length * var->yres_virtual > SZ_32M) ?
@@ -2424,7 +2426,7 @@ static void dcss_ctxld_config(struct work_struct *work)
 
 	/* wait finish */
 	reinit_completion(&cfifo->complete);
-	ret = wait_for_completion_timeout(&cfifo->complete, HZ);
+	ret = wait_for_completion_timeout(&cfifo->complete, 20*HZ);
 	if (!ret)	/* timeout */
 		dev_err(&pdev->dev, "wait ctxld finish timeout\n");
 
@@ -3224,8 +3226,6 @@ static int dcss_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct dcss_info *info;
-	struct fb_info *m_fbinfo;
-
 	info = devm_kzalloc(&pdev->dev, sizeof(struct dcss_info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
@@ -3272,10 +3272,6 @@ static int dcss_probe(struct platform_device *pdev)
 	ret = dcss_register_one_fb(&info->chans.chan_info[1]);
 	if (ret)
 		goto unregister_ch1;
-
-	/* unblank fb0 */
-	m_fbinfo = get_one_fbinfo(0, &info->chans);
-	dcss_blank(FB_BLANK_UNBLANK, m_fbinfo);
 
 	/* init fb1 */
 	dcss_set_par(get_one_fbinfo(1, &info->chans));
