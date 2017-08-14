@@ -37,6 +37,7 @@
 #include <linux/videodev2.h>
 #include <video/mxc_edid.h>
 #include <linux/workqueue.h>
+#include <linux/extcon.h>
 
 #include "mxc_dispdrv.h"
 
@@ -183,6 +184,17 @@
  * this is a kfifo extend interface as required
  */
 #define kfifo_to_end_len(fifo) ((kfifo_size(fifo)) - ((fifo)->kfifo.in & (fifo)->kfifo.mask))
+
+#ifdef CONFIG_EXTCON
+static const unsigned int imx_hdmi_extcon_cables[] = {
+	EXTCON_DISP_HDMI,
+	EXTCON_NONE,
+};
+#endif
+
+#ifdef CONFIG_EXTCON
+struct extcon_dev *hdmi_edev;
+#endif
 
 /* TODO: */
 struct coordinate {
@@ -3275,6 +3287,20 @@ static int dcss_probe(struct platform_device *pdev)
 
 	/* init fb1 */
 	dcss_set_par(get_one_fbinfo(1, &info->chans));
+
+#ifdef CONFIG_EXTCON
+	hdmi_edev = devm_extcon_dev_allocate(&pdev->dev, imx_hdmi_extcon_cables);
+	if (IS_ERR(hdmi_edev)) {
+		dev_err(&pdev->dev, "failed to allocate extcon device\n");
+		goto out;
+	}
+	ret = devm_extcon_dev_register(&pdev->dev,hdmi_edev);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to register extcon device\n");
+		goto out;
+	}
+	extcon_set_state_sync(hdmi_edev, EXTCON_DISP_HDMI, 1);
+#endif
 
 	goto out;
 
