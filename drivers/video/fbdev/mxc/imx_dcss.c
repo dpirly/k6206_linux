@@ -2438,7 +2438,7 @@ static void dcss_ctxld_config(struct work_struct *work)
 
 	/* wait finish */
 	reinit_completion(&cfifo->complete);
-	ret = wait_for_completion_timeout(&cfifo->complete, 20*HZ);
+	ret = wait_for_completion_timeout(&cfifo->complete, HZ);
 	if (!ret)	/* timeout */
 		dev_err(&pdev->dev, "wait ctxld finish timeout\n");
 
@@ -3238,6 +3238,8 @@ static int dcss_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct dcss_info *info;
+	struct fb_info *m_fbinfo;
+
 	info = devm_kzalloc(&pdev->dev, sizeof(struct dcss_info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
@@ -3284,6 +3286,10 @@ static int dcss_probe(struct platform_device *pdev)
 	ret = dcss_register_one_fb(&info->chans.chan_info[1]);
 	if (ret)
 		goto unregister_ch1;
+
+	/* unblank fb0 */
+	m_fbinfo = get_one_fbinfo(0, &info->chans);
+	dcss_blank(FB_BLANK_UNBLANK, m_fbinfo);
 
 	/* init fb1 */
 	dcss_set_par(get_one_fbinfo(1, &info->chans));
