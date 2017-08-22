@@ -1831,7 +1831,8 @@ static int dcss_dtg_start(struct dcss_info *info)
 	writel(0x00080200, info->base + chans->dtg_addr + 0x30);
 
 	/* Trigger DTG on */
-	writel(0xff00518e, info->base + chans->dtg_addr + 0x0);
+	//writel(0xff00518e, info->base + chans->dtg_addr + 0x0);
+	writel(0xff00558e, info->base + chans->dtg_addr + 0x0);
 
 	info->dcss_state = DCSS_STATE_RUNNING;
 
