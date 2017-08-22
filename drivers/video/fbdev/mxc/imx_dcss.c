@@ -23,6 +23,7 @@
 #include <linux/clk.h>
 #include <linux/cache.h>
 #include <asm/cacheflush.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -40,6 +41,7 @@
 #include <linux/extcon.h>
 
 #include "mxc_dispdrv.h"
+#include "imx_dcss_table.h"
 
 /* sub engines address start offset */
 #define HDR_CHAN1_START		0x00000
@@ -250,6 +252,7 @@ struct ctxld_commit {
 	struct list_head list;
 	struct work_struct work;
 	void *data;
+	uint32_t fifo_in;	/* kfifo's 'in' value */
 	uint32_t sb_data_len;
 	uint32_t sb_hp_data_len;
 	uint32_t db_data_len;
@@ -264,30 +267,12 @@ struct ctxld_fifo {
 	DECLARE_KFIFO_PTR(fifo, struct ctxld_unit);
 	struct scatterlist sgl[1];
 	uint32_t sgl_num;
-	/* one consumer and multiple producer */
-	spinlock_t wlock;
+	/* synchronization in two points:
+	 * a. simutanous fifo commits
+	 * b. queue waiting for cfifo flush
+	 */
+	wait_queue_head_t cqueue;
 	struct completion complete;
-};
-
-/* Define Scaler Coefficients Array */
-#define PHASE_NUM	16
-#define TAP_NUM		7
-
-#define COEFF_LUMA_VERTICAL	0x0
-#define COEFF_LUMA_HORIZONTAL	0x1
-#define COEFF_CHROMA_VERTICAL	0x2
-#define COEFF_CHROMA_HORIZONTAL	0x3
-
-#define LUMA_VERTICAL_OFF	0x0
-#define LUMA_HORIZONTAL_OFF	0xC0
-#define CHROMA_VERTICAL_OFF	0x180
-#define CHROMA_HORIZONTAL_OFF	0x280
-
-struct scaler_coeff_array {
-	uint16_t luma_vertical[PHASE_NUM][TAP_NUM];
-	uint16_t luma_horizontal[PHASE_NUM][TAP_NUM];
-	uint16_t chroma_vertical[PHASE_NUM][TAP_NUM];
-	uint16_t chroma_horizontal[PHASE_NUM][TAP_NUM];
 };
 
 /* channel info: 3 channels in DCSS */
@@ -628,81 +613,6 @@ static const struct fb_bitfield def_a2r10g10b10[] = {
 	}
 };
 
-struct scaler_coeff_array coeffs = {
-	.luma_vertical = {
-		{0, 0, 0, 1027, 0, 0, 0},
-		{0, 0, 85, 802, 139, 0, 0},
-		{0, 0, 65, 786, 175, 1, 0},
-		{0, 0, 49, 760, 218, 1, 0},
-		{0, 0, 36, 723, 266, 2, 0},
-		{0, 0, 26, 678, 320, 3, 0},
-		{0, 0, 19, 625, 379, 4, 0},
-		{0, 0, 13, 566, 441, 6, 0},
-		{0, 0, 9, 504, 504, 9, 0},
-		{0, 6, 441, 566, 13, 0, 0},
-		{0, 4, 379, 625, 19, 0, 0},
-		{0, 3, 320, 678, 26, 0, 0},
-		{0, 2, 266, 723, 36, 0, 0},
-		{0, 1, 218, 760, 49, 0, 0},
-		{0, 1, 175, 786, 65, 0, 0},
-		{0, 0, 139, 802, 85, 0, 0},
-	},
-	.luma_horizontal = {
-		{0, 0, 0, 1024, 0, 0, 0},
-		{0, 0, 84, 800, 139, 0, 0},
-		{0, 0, 64, 784, 175, 1, 0},
-		{0, 0, 48, 757, 217, 1, 0},
-		{0, 0, 36, 721, 265, 2, 0},
-		{0, 0, 26, 676, 319, 3, 0},
-		{0, 0, 19, 623, 378, 4, 0},
-		{0, 0, 13, 565, 440, 6, 0},
-		{0, 0, 9, 503, 503, 9, 0},
-		{0, 6, 440, 565, 13, 0, 0},
-		{0, 4, 378, 623, 19, 0, 0},
-		{0, 3, 319, 676, 26, 0, 0},
-		{0, 2, 265, 721, 36, 0, 0},
-		{0, 1, 217, 757, 48, 0, 0},
-		{0, 1, 175, 784, 64, 0, 0},
-		{0, 0, 139, 800, 84, 0, 0},
-	},
-	.chroma_vertical = {
-		{0, 0, 0, 1027, 0, 0, 0},
-		{0, 0, 85, 802, 139, 0, 0},
-		{0, 0, 65, 786, 175, 1, 0},
-		{0, 0, 49, 760, 218, 1, 0},
-		{0, 0, 36, 723, 266, 2, 0},
-		{0, 0, 26, 678, 320, 3, 0},
-		{0, 0, 19, 625, 379, 4, 0},
-		{0, 0, 13, 566, 441, 6, 0},
-		{0, 0, 9, 504, 504, 9, 0},
-		{0, 6, 441, 566, 13, 0, 0},
-		{0, 4, 379, 625, 19, 0, 0},
-		{0, 3, 320, 678, 26, 0, 0},
-		{0, 2, 266, 723, 36, 0, 0},
-		{0, 1, 218, 760, 49, 0, 0},
-		{0, 1, 175, 786, 65, 0, 0},
-		{0, 0, 139, 802, 85, 0, 0},
-	},
-	.chroma_horizontal = {
-		{0, 0, 0, 1024, 0, 0, 0},
-		{0, 0, 84, 800, 139, 0, 0},
-		{0, 0, 64, 784, 175, 1, 0},
-		{0, 0, 48, 757, 217, 1, 0},
-		{0, 0, 36, 721, 265, 2, 0},
-		{0, 0, 26, 676, 319, 3, 0},
-		{0, 0, 19, 623, 378, 4, 0},
-		{0, 0, 13, 565, 440, 6, 0},
-		{0, 0, 9, 503, 503, 9, 0},
-		{0, 6, 440, 565, 13, 0, 0},
-		{0, 4, 378, 623, 19, 0, 0},
-		{0, 3, 319, 676, 26, 0, 0},
-		{0, 2, 265, 721, 36, 0, 0},
-		{0, 1, 217, 757, 48, 0, 0},
-		{0, 1, 175, 784, 64, 0, 0},
-		{0, 0, 139, 800, 84, 0, 0},
-	},
-};
-
 static const struct pix_fmt_info *get_fmt_info(uint32_t fourcc)
 {
 	uint32_t i;
@@ -780,69 +690,6 @@ static void fill_db(struct cbuffer *cb,
 }
 #endif
 
-static void coeff_array_fill(int type,
-			     uint32_t base,
-			     struct cbuffer *cb)
-{
-	uint32_t i, offset;
-	uint16_t (*array)[TAP_NUM];
-
-	switch (type) {
-	case COEFF_LUMA_VERTICAL:
-		offset = LUMA_VERTICAL_OFF;
-		array  = coeffs.luma_vertical;
-		break;
-	case COEFF_LUMA_HORIZONTAL:
-		offset = LUMA_HORIZONTAL_OFF;
-		array  = coeffs.luma_horizontal;
-		break;
-	case COEFF_CHROMA_VERTICAL:
-		offset = CHROMA_VERTICAL_OFF;
-		array  = coeffs.chroma_vertical;
-		break;
-	case COEFF_CHROMA_HORIZONTAL:
-		offset = CHROMA_HORIZONTAL_OFF;
-		array  = coeffs.chroma_horizontal;
-		break;
-	default:
-		return;
-	}
-
-	for (i = 0; i < PHASE_NUM; i++) {
-		fill_sb(cb, base + 0x80 + offset + (i << 2),
-			(array[i][0] & 0xfff) << 16 |
-			(array[i][1] & 0xfff) << 4  |
-			(array[i][2] & 0xf00) >> 8);
-
-		fill_sb(cb, base + 0xC0 + offset + (i << 2),
-			(array[i][2] & 0x0ff) << 20 |
-			(array[i][3] & 0xfff) << 8  |
-			(array[i][4] & 0xff0) >> 4);
-
-		fill_sb(cb, base + 0x100 + offset + (i << 2),
-			(array[i][4] & 0x00f) << 24 |
-			(array[i][5] & 0xfff) << 12 |
-			(array[i][6] & 0xfff));
-	}
-}
-
-static void scaler_coeff_config(struct dcss_channel_info *cinfo)
-{
-	struct cbuffer *cb = &cinfo->cb;
-
-	/* config Luma Vertical Coefficients */
-	coeff_array_fill(COEFF_LUMA_VERTICAL, cinfo->scaler_addr, cb);
-
-	/* config Luma Horizontal Coefficients */
-	coeff_array_fill(COEFF_LUMA_HORIZONTAL, cinfo->scaler_addr, cb);
-
-	/* config Chroma Vertical Coefficients */
-	coeff_array_fill(COEFF_CHROMA_VERTICAL, cinfo->scaler_addr, cb);
-
-	/* config Chroma Horizontal Coefficients */
-	coeff_array_fill(COEFF_CHROMA_HORIZONTAL, cinfo->scaler_addr, cb);
-}
-
 static void ctxld_fifo_info_print(struct ctxld_fifo *cfifo)
 {
 	pr_debug("%s: print kfifo info: **********\n", __func__);
@@ -869,14 +716,12 @@ static int ctxld_fifo_alloc(struct device *dev,
 	}
 
 	cfifo->size = fifo_size;
-	kfifo_init(&cfifo->fifo,
-		   page_address(phys_to_page(dma_to_phys(dev, cfifo->dma_handle))),
-		   fifo_size);
+	kfifo_init(&cfifo->fifo, cfifo->vaddr, fifo_size);
 
 	/* TODO: sgl num can be changed if required */
 	cfifo->sgl_num = 1;
 
-	spin_lock_init(&cfifo->wlock);
+	init_waitqueue_head(&cfifo->cqueue);
 	init_completion(&cfifo->complete);
 
 	return 0;
@@ -1563,6 +1408,9 @@ static int dcss_dpr_config(uint32_t dpr_ch, struct dcss_info *info)
 	fill_sb(cb, chan_info->dpr_addr + 0x70, pitch);
 
 	fill_sb(cb, chan_info->dpr_addr + 0x200, 0x38);
+
+	/* Trigger DPR on */
+	fill_sb(cb, chan_info->dpr_addr + 0x0, 0x5);
 #endif
 
 	return 0;
@@ -1934,7 +1782,8 @@ static int dcss_scaler_config(uint32_t scaler_ch, struct dcss_info *info)
 	/* Scale Horizontal Chroma Start */
 	fill_sb(cb, chan_info->scaler_addr + 0x60, 0x0);
 
-	scaler_coeff_config(chan_info);
+	/* Trigger SCALER on */
+	fill_sb(cb, chan_info->scaler_addr + 0x0, 0x11);
 #endif
 	return 0;
 }
@@ -1946,42 +1795,51 @@ static int dcss_dtg_start(struct dcss_info *info)
 	uint32_t dis_lrc_x, dis_lrc_y;
 	struct dcss_channels *chans = &info->chans;
 	struct dcss_channel_info *chan_info;
-	struct fb_info *fbi;
-	struct fb_var_screeninfo *var;
-	struct dcss_pixmap *input;
+	const struct fb_videomode *dmode;
 	struct cbuffer *cb;
 
 	chan_info = &chans->chan_info[0];
-	fbi = chan_info->fb_info;
-	var = &fbi->var;
-	input = &chan_info->input;
+	dmode = info->dft_disp_mode;
 	cb = &chan_info->cb;
 
 	/* Display Timing Config */
-	dtg_lrc_x = var->xres + var->left_margin +
-		var->right_margin + var->hsync_len - 1;
-	dtg_lrc_y = var->yres + var->upper_margin +
-		var->lower_margin + var->vsync_len - 1;
+	dtg_lrc_x = dmode->xres + dmode->left_margin +
+		    dmode->right_margin + dmode->hsync_len - 1;
+	dtg_lrc_y = dmode->yres + dmode->upper_margin +
+		    dmode->lower_margin + dmode->vsync_len - 1;
 	writel(dtg_lrc_y << 16 | dtg_lrc_x, info->base + chans->dtg_addr + 0x4);
 
 	/* global output timing */
-	dis_ulc_x = var->left_margin + var->hsync_len - 1;
-	dis_ulc_y = var->upper_margin + var->lower_margin +
-		var->vsync_len - 1;
+	dis_ulc_x = dmode->left_margin + dmode->hsync_len - 1;
+	dis_ulc_y = dmode->upper_margin + dmode->lower_margin +
+		    dmode->vsync_len - 1;
 	writel(dis_ulc_y << 16 | dis_ulc_x, info->base + chans->dtg_addr + 0x8);
 
-	dis_lrc_x = var->xres + var->left_margin +
-		var->hsync_len - 1;
-	dis_lrc_y = var->yres + var->upper_margin +
-		var->lower_margin + var->vsync_len - 1;
+	dis_lrc_x = dmode->xres + dmode->left_margin +
+		    dmode->hsync_len - 1;
+	dis_lrc_y = dmode->yres + dmode->upper_margin +
+		    dmode->lower_margin + dmode->vsync_len - 1;
 	writel(dis_lrc_y << 16 | dis_lrc_x, info->base + chans->dtg_addr + 0xc);
 
-	writel(0xff000100, info->base + chans->dtg_addr + 0x0);
+	/* config db and sb loading position of ctxld */
+	writel(0xb000a, info->base + chans->dtg_addr + 0x28);
+
+	/* config background color for graph layer: black */
+	writel(0x0, info->base + chans->dtg_addr + 0x2c);
+
+	/* config background color for video layer: black */
+	writel(0x00080200, info->base + chans->dtg_addr + 0x30);
+
+	/* Trigger DTG on */
+	writel(0xff00518e, info->base + chans->dtg_addr + 0x0);
+
+	info->dcss_state = DCSS_STATE_RUNNING;
 
 	return 0;
 }
 
-static void dtg_channel_timing_config(struct dcss_channel_info *cinfo)
+static void dtg_channel_timing_config(int blank,
+				struct dcss_channel_info *cinfo)
 {
 	struct cbuffer *cb;
 	uint32_t ch_ulc_reg, ch_lrc_reg;
@@ -2012,10 +1870,24 @@ static void dtg_channel_timing_config(struct dcss_channel_info *cinfo)
 
 	cb = &cinfo->cb;
 
-	fill_sb(cb, chans->dtg_addr + ch_ulc_reg,
-		pos->ulc_y << 16 | pos->ulc_x);
-	fill_sb(cb, chans->dtg_addr + ch_lrc_reg,
-		pos->lrc_y << 16 | pos->lrc_x);
+	switch (blank) {
+	case FB_BLANK_UNBLANK:
+		/* set display window for one channel */
+		fill_sb(cb, chans->dtg_addr + ch_ulc_reg,
+			pos->ulc_y << 16 | pos->ulc_x);
+		fill_sb(cb, chans->dtg_addr + ch_lrc_reg,
+			pos->lrc_y << 16 | pos->lrc_x);
+		break;
+	case FB_BLANK_NORMAL:
+	case FB_BLANK_VSYNC_SUSPEND:
+	case FB_BLANK_HSYNC_SUSPEND:
+	case FB_BLANK_POWERDOWN:
+		fill_sb(cb, chans->dtg_addr + ch_ulc_reg, 0x0);
+		fill_sb(cb, chans->dtg_addr + ch_lrc_reg, 0x0);
+		break;
+	default:
+		return;
+	}
 }
 
 static void dtg_global_timing_config(struct dcss_info *info)
@@ -2054,11 +1926,9 @@ static void dtg_global_timing_config(struct dcss_info *info)
 
 static int dcss_dtg_config(uint32_t ch_id, struct dcss_info *info)
 {
-	uint32_t global_alpha;
 	struct platform_device *pdev = info->pdev;
 	struct dcss_channels *chans = &info->chans;
 	struct dcss_channel_info *cinfo;
-	struct cbuffer *cb;
 
 	if (ch_id > 2) {
 		dev_err(&pdev->dev, "invalid channel id\n");
@@ -2066,24 +1936,13 @@ static int dcss_dtg_config(uint32_t ch_id, struct dcss_info *info)
 	}
 
 	cinfo = &chans->chan_info[ch_id];
-	cb = &cinfo->cb;
 
-#if USE_CTXLD
 	if (ch_id == DCSS_CHAN_MAIN)
 		dtg_global_timing_config(info);
 
 	/* TODO: Channel Timing Config */
-	dtg_channel_timing_config(cinfo);
+	dtg_channel_timing_config(FB_BLANK_UNBLANK, cinfo);
 
-	/* Trigger DTG on */
-	if (ch_id == DCSS_CHAN_MAIN) {
-		/* TODO: use global alpha temporarily */
-		global_alpha = 0xff;
-		/* db and sb trigger positions */
-		fill_sb(cb, chans->dtg_addr + 0x28, 0xb000a);
-		fill_sb(cb, chans->dtg_addr + 0x0, 0xff00018c);
-	}
-#endif
 	return 0;
 }
 
@@ -2097,15 +1956,13 @@ static int dcss_subsam_config(struct dcss_info *info)
 	uint32_t de_lrc_x, de_lrc_y;
 	struct dcss_channels *chans = &info->chans;
 	struct dcss_channel_info *chan_info;
-	struct fb_info *fbi;
-	struct fb_var_screeninfo *var;
 	struct cbuffer *cb;
+	const struct fb_videomode *dmode;
 
 	/* using channel 0 by default */
 	chan_info = &chans->chan_info[0];
-	fbi = chan_info->fb_info;
-	var = &fbi->var;
 	cb = &chan_info->cb;
+	dmode = info->dft_disp_mode;
 
 	/* TODO: for 1080p only */
 	hsync_pol = 1;
@@ -2124,10 +1981,10 @@ static int dcss_subsam_config(struct dcss_info *info)
 #endif
 
 	/* Timing Config */
-	disp_lrc_x = var->xres + var->left_margin +
-		     var->right_margin + var->hsync_len - 1;
-	disp_lrc_y = var->yres + var->upper_margin +
-		     var->lower_margin + var->vsync_len - 1;
+	disp_lrc_x = dmode->xres + dmode->left_margin +
+		     dmode->right_margin + dmode->hsync_len - 1;
+	disp_lrc_y = dmode->yres + dmode->upper_margin +
+		     dmode->lower_margin + dmode->vsync_len - 1;
 #if USE_CTXLD
 	fill_sb(cb, chans->subsam_addr + 0x10,
 		disp_lrc_y << 16 | disp_lrc_x);
@@ -2139,9 +1996,9 @@ static int dcss_subsam_config(struct dcss_info *info)
 	/* horizontal sync will be asserted when
 	 * horizontal count == START
 	 */
-	hsync_start = var->xres + var->left_margin +
-		      var->right_margin + var->hsync_len - 1;
-	hsync_end   = var->hsync_len - 1;
+	hsync_start = dmode->xres + dmode->left_margin +
+		      dmode->right_margin + dmode->hsync_len - 1;
+	hsync_end   = dmode->hsync_len - 1;
 #if USE_CTXLD
 	fill_sb(cb, chans->subsam_addr + 0x20,
 		(hsync_pol << 31) | hsync_end << 16 | hsync_start);
@@ -2150,8 +2007,8 @@ static int dcss_subsam_config(struct dcss_info *info)
 	       info->base + chans->subsam_addr + 0x20);
 #endif
 
-	vsync_start = var->lower_margin - 1;
-	vsync_end   = var->lower_margin + var->vsync_len - 1;
+	vsync_start = dmode->lower_margin - 1;
+	vsync_end   = dmode->lower_margin + dmode->vsync_len - 1;
 #if USE_CTXLD
 	fill_sb(cb, chans->subsam_addr + 0x30,
 		(vsync_pol << 31) | vsync_end << 16 | vsync_start);
@@ -2160,9 +2017,9 @@ static int dcss_subsam_config(struct dcss_info *info)
 	       info->base + chans->subsam_addr + 0x30);
 #endif
 
-	de_ulc_x = var->left_margin + var->hsync_len - 1;
-	de_ulc_y = var->upper_margin + var->lower_margin +
-		   var->vsync_len;
+	de_ulc_x = dmode->left_margin + dmode->hsync_len - 1;
+	de_ulc_y = dmode->upper_margin + dmode->lower_margin +
+		   dmode->vsync_len;
 #if USE_CTXLD
 	fill_sb(cb, chans->subsam_addr + 0x40,
 		(de_pol << 31) | de_ulc_y << 16 | de_ulc_x);
@@ -2171,10 +2028,10 @@ static int dcss_subsam_config(struct dcss_info *info)
 	       info->base + chans->subsam_addr + 0x40);
 #endif
 
-	de_lrc_x = var->xres + var->left_margin +
-		   var->hsync_len - 1;
-	de_lrc_y = var->yres + var->upper_margin +
-		   var->lower_margin + var->vsync_len - 1;
+	de_lrc_x = dmode->xres + dmode->left_margin +
+		   dmode->hsync_len - 1;
+	de_lrc_y = dmode->yres + dmode->upper_margin +
+		   dmode->lower_margin + dmode->vsync_len - 1;
 #if USE_CTXLD
 	fill_sb(cb, chans->subsam_addr + 0x50,
 		de_lrc_y << 16 | de_lrc_x);
@@ -2185,196 +2042,6 @@ static int dcss_subsam_config(struct dcss_info *info)
 	writel(de_lrc_y << 16 | de_lrc_x,
 	       info->base + chans->subsam_addr + 0x50);
 	writel(0x1, info->base + chans->subsam_addr + 0x0);
-#endif
-
-	return 0;
-}
-
-static int dcss_hdr10_input_config(uint32_t hdr_ch, struct dcss_info *info)
-{
-	struct platform_device *pdev = info->pdev;
-	struct dcss_channels *chans;
-	struct dcss_channel_info *chan_info;
-	struct dcss_pixmap *input;
-	struct cbuffer *cb;
-
-	if (hdr_ch > 2) {
-		dev_err(&pdev->dev, "invalid hdr channel id\n");
-		return -EINVAL;
-	}
-
-	chans = &info->chans;
-	chan_info = &chans->chan_info[hdr_ch];
-	cb = &chan_info->cb;
-	input = &chan_info->input;
-
-#if USE_CTXLD
-	/* disable float-to-fixed converter */
-	fill_sb(cb, chan_info->hdr10_in_addr + 0x3874, 0x0);
-	/* disable LUT */
-	fill_sb(cb, chan_info->hdr10_in_addr + 0x3080, 0x0);
-
-	switch (fmt_is_yuv(input->format)) {
-	case 0:         /* RGB */
-		/* disable CSCA */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x3000, 0x0);
-		/* disable CSCB */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x3800, 0x0);
-		break;
-	case 1:         /* TODO: YUV 1P */
-		break;
-	case 2:         /* YUV 2P */
-		/* config input CSC-A */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03028,
-			0x00000000); /* Y pre-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0302c,
-			0x00000200); /* U pre-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03030,
-			0x00000200); /* V pre-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03034,
-			0x00000200); /* Y pre-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03038,
-			0x00000200); /* U pre-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0303c,
-			0x00000200); /* V pre-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03040,
-			0x000003ff); /* Y pre-offset clip max */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03044,
-			0x000003ff); /* U pre-offset clip max */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03048,
-			0x000003ff); /* V pre-offset clip max */
-
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03004,
-			0x00000040); /* h(0,0) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03008,
-			0x00000000); /* h(1,0) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0300c,
-			0x0000005a); /* h(2,0) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03010,
-			0x00000040); /* h(0,1) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03014,
-			0x0000ffea); /* h(1,1) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03018,
-			0x0000ffd2); /* h(2,1) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0301c,
-			0x00000040); /* h(0,2) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03020,
-			0x00000069); /* h(1,2) */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03024,
-			0x00000000); /* h(2,2) */
-
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0304c,
-			0x00000006); /* norm factor */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03050,
-			0x00000000); /* Y post-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03054,
-			0x00000000); /* U post-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03058,
-			0x00000000); /* V post-offset */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0305c,
-			0x00000000); /* Y post-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03060,
-			0x00000000); /* U post-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03064,
-			0x00000000); /* V post-offset clip min */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03068,
-			0x000003ff); /* Y post-offset clip max */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x0306c,
-			0x000003ff); /* U post-offset clip max */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03070,
-			0x000003ff); /* V post-offset clip max */
-		fill_sb(cb, chan_info->hdr10_in_addr + 0x03000,
-			0x00000003); /* enable CSC-A */
-		break;
-	default:
-		return -EINVAL;
-	}
-#else
-	writel(0x0, info->base + chan_info->hdr10_in_addr + 0x3874);
-	writel(0x0, info->base + chan_info->hdr10_in_addr + 0x3080);
-	writel(0x0, info->base + chan_info->hdr10_in_addr + 0x3000);
-	writel(0x0, info->base + chan_info->hdr10_in_addr + 0x3800);
-#endif
-
-	return 0;
-}
-
-static int dcss_hdr10_output_config(struct dcss_info *info)
-{
-	struct dcss_channels *chans;
-	struct dcss_channel_info *chan_info;
-	struct cbuffer *cb;
-
-	chans = &info->chans;
-	/* using channel 0 by default */
-	chan_info = &chans->chan_info[0];
-	cb = &chan_info->cb;
-
-#if USE_CTXLD
-	fill_sb(cb, chans->hdr10_out_addr + 0x3004, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3008, 0x1);
-	fill_sb(cb, chans->hdr10_out_addr + 0x300c, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3010, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3014, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3018, 0x1);
-	fill_sb(cb, chans->hdr10_out_addr + 0x301c, 0x1);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3020, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3024, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3028, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x302c, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3030, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3034, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3038, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x303c, 0x0);
-
-	fill_sb(cb, chans->hdr10_out_addr + 0x3040, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3044, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3048, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x304c, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3050, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3054, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3058, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x305c, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3060, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3064, 0x0);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3068, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x306c, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3070, 0xffffffff);
-	fill_sb(cb, chans->hdr10_out_addr + 0x3074, 0x0);
-
-	fill_sb(cb, chans->hdr10_out_addr + 0x3000, 0x3);
-#else
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3004);
-	writel(0x1, info->base + chans->hdr10_out_addr + 0x3008);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x300c);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3010);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3014);
-	writel(0x1, info->base + chans->hdr10_out_addr + 0x3018);
-	writel(0x1, info->base + chans->hdr10_out_addr + 0x301c);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3020);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3024);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3028);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x302c);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3030);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3034);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3038);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x303c);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x3040);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x3044);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x3048);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x304c);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3050);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3054);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3058);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x305c);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3060);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3064);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x3068);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x306c);
-	writel(0xffffffff, info->base + chans->hdr10_out_addr + 0x3070);
-	writel(0x0, info->base + chans->hdr10_out_addr + 0x3074);
-
-	writel(0x3, info->base + chans->hdr10_out_addr + 0x3000);
 #endif
 
 	return 0;
@@ -2418,10 +2085,10 @@ static void dcss_ctxld_config(struct work_struct *work)
 	/* configure sb buffer */
 	if (cc->sb_data_len) {
 		/* cfifo first store sb and than store db */
-		writel(phys_to_dma(&pdev->dev, sg_phys(cfifo->sgl)),
+		writel(cfifo->dma_handle + cc->fifo_in * kfifo_esize(&cfifo->fifo),
 		       info->base + chans->ctxld_addr + CTXLD_SB_BASE_ADDR);
 		writel(cc->sb_hp_data_len |
-		       (cc->sb_data_len - cc->sb_hp_data_len),
+		       ((cc->sb_data_len - cc->sb_hp_data_len) << 16),
 		       info->base + chans->ctxld_addr + CTXLD_SB_COUNT);
 	}
 
@@ -2455,7 +2122,7 @@ static void dcss_ctxld_config(struct work_struct *work)
 static int commit_to_fifo(uint32_t channel,
 			  struct dcss_info *info)
 {
-	unsigned long irqflags;
+	int ret = 0;
 	uint32_t count = 0, commit_size;
 	struct platform_device *pdev = info->pdev;
 	struct dcss_channels *chans;
@@ -2464,6 +2131,7 @@ static int commit_to_fifo(uint32_t channel,
 	struct ctxld_commit *cc;
 	struct cbuffer *cb;
 	struct ctxld_unit *unit = NULL;
+	uint32_t ctxld_status, timeout;
 
 	if (channel > 2 || !info)
 		return -EINVAL;
@@ -2479,21 +2147,58 @@ static int commit_to_fifo(uint32_t channel,
 	cb = &chan_info->cb;
 	commit_size = cb->sb_data_len + cb->db_data_len;
 
-#if 0
-	spin_lock_irqsave(&cfifo->wlock, irqflags);
+	/* timeout is 1000ms */
+	timeout = 1001;
+	/* TODO: workaround for making fifo commit to be synchronous */
+	ctxld_status = readl(info->base + CTX_LD_START + CTXLD_CTRL_STATUS);
+	while (--timeout && (ctxld_status & 0x1)) {
+		mdelay(1);
+		ctxld_status = readl(info->base + CTX_LD_START + CTXLD_CTRL_STATUS);
+	}
+
+	if (!timeout) {
+		dev_err(&pdev->dev, "%s: context loader timeout\n", __func__);
+
+		/* drop this commit */
+		cb->db_data_len = 0;
+		cb->sb_data_len = 0;
+
+		kfree(cc);
+
+		return -EBUSY;
+	}
+
+restart:
+	spin_lock(&cfifo->cqueue.lock);
+
+	if (unlikely(atomic_read(&info->flush) == 1)) {
+		ret = wait_event_interruptible_exclusive_locked(cfifo->cqueue,
+						atomic_read(&info->flush));
+		if (ret == -ERESTARTSYS) {
+			dev_info(&pdev->dev, "wait fifo flush is interrupted\n");
+			spin_unlock(&cfifo->cqueue.lock);
+			goto restart;
+		}
+	} else {
+		if (unlikely(waitqueue_active(&cfifo->cqueue)))
+			wake_up_locked(&cfifo->cqueue);
+	}
 
 	if (unlikely(commit_size > kfifo_to_end_len(&cfifo->fifo))) {
 		atomic_set(&info->flush, 1);
-		spin_unlock_irqrestore(&cfifo->wlock, irqflags);
-		/* TODO: Wait fifo flush empty to avoid fifo wrap */
+		spin_unlock(&cfifo->cqueue.lock);
+		/* Wait fifo flush empty to avoid fifo wrap */
 		flush_workqueue(info->ctxld_wq);
-	} else
-		spin_unlock_irqrestore(&cfifo->wlock, irqflags);
-
-#endif
-	spin_lock_irqsave(&cfifo->wlock, irqflags);
+		spin_lock(&cfifo->cqueue.lock);
+		atomic_set(&info->flush, 0);
+		kfifo_reset(&cfifo->fifo);
+		if (waitqueue_active(&cfifo->cqueue))
+			wake_up_locked(&cfifo->cqueue);
+	}
 
 	unit = (struct ctxld_unit *)cb->sb_addr;
+
+	cc->fifo_in = cfifo->fifo.kfifo.in & cfifo->fifo.kfifo.mask;
 
 	if (cb->sb_data_len) {
 		count = kfifo_in(&cfifo->fifo, cb->sb_addr, cb->sb_data_len);
@@ -2503,6 +2208,7 @@ static int commit_to_fifo(uint32_t channel,
 			count = kfifo_out(&cfifo->fifo, cb->sb_addr, count);
 			BUG_ON(1);
 		}
+		cc->sb_hp_data_len = count;
 		cc->sb_data_len = count;
 	}
 
@@ -2517,16 +2223,13 @@ static int commit_to_fifo(uint32_t channel,
 		cc->db_data_len = count;
 	}
 
-	/* TODO: this can be refined */
-	__dma_flush_area(cfifo->fifo.kfifo.data, cfifo->size);
-
 	ctxld_fifo_info_print(cfifo);
 
 	/* empty sb and db buffer */
 	cb->db_data_len = 0;
 	cb->sb_data_len = 0;
 
-	spin_unlock_irqrestore(&cfifo->wlock, irqflags);
+	spin_unlock(&cfifo->cqueue.lock);
 
 	/* queue the work to workqueue */
 	cc->data = info;
@@ -2639,7 +2342,7 @@ static int config_channel_pipe(struct dcss_channel_info *cinfo)
 
 	fb_node = fbi->node;
 
-	dev_info(&cinfo->pdev->dev, "begin config pipe %d\n", fb_node);
+	dev_dbg(&cinfo->pdev->dev, "begin config pipe %d\n", fb_node);
 
 	/* configure all the sub modules on one channel:
 	 * 1. DEC400D/DTRC
@@ -2665,19 +2368,13 @@ static int config_channel_pipe(struct dcss_channel_info *cinfo)
 		goto out;
 	}
 
-	ret = dcss_hdr10_input_config(fb_node, info);
-	if (ret) {
-		dev_err(&pdev->dev, "hdr10 input config failed\n");
-		goto out;
-	}
-
 out:
 	return ret;
 }
 
 static int dcss_set_par(struct fb_info *fbi)
 {
-	int ret = 0, saved_blank;
+	int ret = 0;
 	int fb_node = fbi->node;
 	struct dcss_channel_info *cinfo = fbi->par;
 	struct dcss_info *info = cinfo->dev_data;
@@ -2692,15 +2389,6 @@ static int dcss_set_par(struct fb_info *fbi)
 	chan_info = &chans->chan_info[fb_node];
 	cb = &chan_info->cb;
 
-	saved_blank = chan_info->blank;
-
-	if (saved_blank == FB_BLANK_UNBLANK) {
-		/* blank the fb if is not to
-		 * stop dcss for a while
-		 */
-		ret = dcss_blank(FB_BLANK_NORMAL, fbi);
-	}
-
 	/* TODO: add save/recovery when config failed */
 	fb_var_to_pixmap(&chan_info->input, &fbi->var);
 
@@ -2708,19 +2396,17 @@ static int dcss_set_par(struct fb_info *fbi)
 	if (ret)
 		goto fail;
 
-	/* dcss output timings can only be set for fb0 */
-	if (!fb_node) {
-		ret = dcss_hdr10_output_config(info);
-		if (ret) {
-			dev_err(&pdev->dev, "hdr10 output config failed\n");
-			goto fail;
-		}
-	}
+	ret = dcss_dtg_config(fb_node, info);
+	if (ret)
+		goto fail;
 
-	if (saved_blank == FB_BLANK_UNBLANK) {
-		/* unblank the fb if need */
-		ret = dcss_blank(FB_BLANK_UNBLANK, fbi);
+#if USE_CTXLD
+	ret = commit_to_fifo(fb_node, info);
+	if (ret) {
+		dev_err(&pdev->dev, "commit config failed\n");
+		goto out;
 	}
+#endif
 
 	goto out;
 
@@ -2752,9 +2438,6 @@ static int dcss_channel_blank(int blank,
 
 	switch (blank) {
 	case FB_BLANK_UNBLANK:
-		/* enable dtg */
-		dtg_ctrl |= 0x1 << (2 - cinfo->channel_id);
-
 		/* set global alpha */
 		if (cinfo->channel_id == DCSS_CHAN_MAIN)
 			dtg_ctrl |= (0xff << 24);
@@ -2765,9 +2448,6 @@ static int dcss_channel_blank(int blank,
 	case FB_BLANK_VSYNC_SUSPEND:
 	case FB_BLANK_HSYNC_SUSPEND:
 	case FB_BLANK_POWERDOWN:
-		/* disable dtg */
-		dtg_ctrl &= ~(0x1 << (2 - cinfo->channel_id));
-
 		/* clear global alpha */
 		if (cinfo->channel_id == DCSS_CHAN_MAIN)
 			dtg_ctrl &= ~(0xff << 24);
@@ -2790,65 +2470,19 @@ static int dcss_blank(int blank, struct fb_info *fbi)
 	struct dcss_channel_info *cinfo = fbi->par;
 	struct dcss_info *info = cinfo->dev_data;
 	struct platform_device *pdev = info->pdev;
-	struct cbuffer *cb = &cinfo->cb;
 
-	if (blank == FB_BLANK_UNBLANK) {
-		/* dcss output timings can only be set for fb0 */
-		if (!fb_node) {
-			ret = dcss_subsam_config(info);
-			if (ret) {
-				dev_err(&pdev->dev, "subsam config failed\n");
-				goto out;
-			}
-
-			ret = dcss_dtg_config(fb_node, info);
-			if (ret) {
-				dev_err(&pdev->dev, "dtg config failed\n");
-				goto out;
-			}
-		} else {
-			dcss_channel_blank(blank, cinfo);
-			dtg_channel_timing_config(cinfo);
-		}
-
-		if (unlikely(!cinfo->dpr_scaler_en)) {
-			/* Trigger DPR and SCALER */
-			fill_sb(cb, cinfo->dpr_addr + 0x0, 0x5);
-			fill_sb(cb, cinfo->scaler_addr + 0x0, 0x11);
-			cinfo->dpr_scaler_en = true;
-		}
-#if USE_CTXLD
-		ret = commit_to_fifo(fb_node, info);
-		if (ret) {
-			dev_err(&pdev->dev, "commit config failed\n");
-			goto out;
-		}
-#endif
+	dtg_channel_timing_config(blank, cinfo);
+	dcss_channel_blank(blank, cinfo);
 
 #if USE_CTXLD
-		if (!fb_node) {
-			/* start global timing */
-			if (info->dcss_state == DCSS_STATE_RESET) {
-				ret = dcss_dtg_start(info);
-				if (ret) {
-					dev_err(&pdev->dev, "start dtg failed\n");
-					goto out;
-				}
-
-				info->dcss_state = DCSS_STATE_RUNNING;
-			}
-		}
-#endif
-	} else {
-		dcss_channel_blank(blank, cinfo);
-#if USE_CTXLD
-		ret = commit_to_fifo(fb_node, info);
-		if (ret) {
-			dev_err(&pdev->dev, "commit config failed\n");
-			goto out;
-		}
-#endif
+	ret = commit_to_fifo(fb_node, info);
+	if (ret) {
+		dev_err(&pdev->dev, "commit config failed\n");
+		goto out;
 	}
+#endif
+
+	cinfo->blank = blank;
 
 out:
 	return ret;
@@ -3234,6 +2868,81 @@ out:
 	return ret;
 }
 
+static void dcss_fix_data_config(struct dcss_info *info)
+{
+	int i, esize;
+
+	esize = sizeof(struct data_unit);
+
+	/* SCALER COEFFS config */
+	for (i = 0; i < sizeof(scaler_coeffs_ch0) / esize; i++)
+		writel(scaler_coeffs_ch0[i].data,
+		       info->base + scaler_coeffs_ch0[i].addr);
+
+	for (i = 0; i < sizeof(scaler_coeffs_ch1) / esize; i++)
+		writel(scaler_coeffs_ch1[i].data,
+		       info->base + scaler_coeffs_ch1[i].addr);
+
+	/* HDR10 PIPE1 config */
+	for (i = 0; i < sizeof(hdr10_pipe1_lut_a0) / esize; i++)
+		writel(hdr10_pipe1_lut_a0[i].data,
+		       info->base + hdr10_pipe1_lut_a0[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe1_lut_a1) / esize; i++)
+		writel(hdr10_pipe1_lut_a1[i].data,
+		       info->base + hdr10_pipe1_lut_a1[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe1_lut_a2) / esize; i++)
+		writel(hdr10_pipe1_lut_a2[i].data,
+		       info->base + hdr10_pipe1_lut_a2[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe1_csca) / esize; i++)
+		writel(hdr10_pipe1_csca[i].data,
+		       info->base + hdr10_pipe1_csca[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe1_cscb) / esize; i++)
+		writel(hdr10_pipe1_cscb[i].data,
+		       info->base + hdr10_pipe1_cscb[i].addr);
+
+	/* HDR10 PIPE2 config */
+	for (i = 0; i < sizeof(hdr10_pipe2_lut_a0) / esize; i++)
+		writel(hdr10_pipe2_lut_a0[i].data,
+		       info->base + hdr10_pipe2_lut_a0[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe2_lut_a1) / esize; i++)
+		writel(hdr10_pipe2_lut_a1[i].data,
+		       info->base + hdr10_pipe2_lut_a1[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe2_lut_a2) / esize; i++)
+		writel(hdr10_pipe2_lut_a2[i].data,
+		       info->base + hdr10_pipe2_lut_a2[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe2_csca) / esize; i++)
+		writel(hdr10_pipe2_csca[i].data,
+		       info->base + hdr10_pipe2_csca[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_pipe2_cscb) / esize; i++)
+		writel(hdr10_pipe2_cscb[i].data,
+		       info->base + hdr10_pipe2_cscb[i].addr);
+
+	/* HDR10 OPIPE config */
+	for (i = 0; i < sizeof(hdr10_opipe_a0) / esize; i++)
+		writel(hdr10_opipe_a0[i].data,
+		       info->base + hdr10_opipe_a0[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_opipe_a1) / esize; i++)
+		writel(hdr10_opipe_a1[i].data,
+		       info->base + hdr10_opipe_a1[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_opipe_a2) / esize; i++)
+		writel(hdr10_opipe_a2[i].data,
+		       info->base + hdr10_opipe_a2[i].addr);
+
+	for (i = 0; i < sizeof(hdr10_opipe_csco) / esize; i++)
+		writel(hdr10_opipe_csco[i].data,
+		       info->base + hdr10_opipe_csco[i].addr);
+}
+
 static int dcss_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -3262,6 +2971,15 @@ static int dcss_probe(struct platform_device *pdev)
 	/* Pull DCSS out of resets */
 	writel(0xffffffff, info->blkctl_base + 0x0);
 
+	/* TODO: config fixed data for DCSS */
+	dcss_fix_data_config(info);
+
+	dcss_interrupts_init(info);
+
+	ret = dcss_dtg_start(info);
+	if (ret)
+		goto kfree_info;
+
 	/* register channel 0: graphic */
 	ret = dcss_register_one_ch(0, info);
 	if (ret)
@@ -3272,10 +2990,12 @@ static int dcss_probe(struct platform_device *pdev)
 	if (ret)
 		goto unregister_ch0;
 
-	dcss_interrupts_init(info);
-
 	/* enable encoder if exists */
 	dcss_enable_encoder(info);
+
+	ret = dcss_subsam_config(info);
+	if (ret)
+		goto unregister_fb0;
 
 	/* register channel 1: video */
 	ret = dcss_register_one_ch(1, info);

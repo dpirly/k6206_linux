@@ -16,6 +16,7 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_edid.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/regmap.h>
@@ -314,6 +315,7 @@ struct it6263 {
 	struct regmap *lvds_regmap;
 	struct drm_bridge bridge;
 	struct drm_connector connector;
+	struct gpio_desc *reset_gpio;
 	bool is_hdmi;
 	bool split_mode;
 };
@@ -340,13 +342,43 @@ static inline void hdmi_update_bits(struct it6263 *it6263, unsigned int reg,
 	regmap_update_bits(it6263->hdmi_regmap, reg, mask, val);
 }
 
+static void it6263_reset(struct it6263 *it6263)
+{
+	if (!it6263->reset_gpio)
+		return;
+
+	gpiod_set_value_cansleep(it6263->reset_gpio, 0);
+
+	usleep_range(1000, 2000);
+
+	gpiod_set_value_cansleep(it6263->reset_gpio, 1);
+
+	/*
+	 * The chip maker says the low pulse should be at least 40ms,
+	 * so 41ms is sure to be enough.
+	 */
+	usleep_range(41000, 45000);
+
+	gpiod_set_value_cansleep(it6263->reset_gpio, 0);
+
+	/* somehow, addtional time to wait the high voltage to be stable */
+	usleep_range(5000, 6000);
+}
+
 static enum drm_connector_status
 it6263_connector_detect(struct drm_connector *connector, bool force)
 {
 	struct it6263 *it6263 = connector_to_it6263(connector);
 	unsigned int status;
+	int i;
 
-	regmap_read(it6263->hdmi_regmap, HDMI_REG_SYS_STATUS, &status);
+	/*
+	 * FIXME: We read status tens of times to workaround
+	 * cable detection failure issue at boot time on some
+	 * platforms.
+	 */
+	for (i = 0; i < 90; i++)
+		regmap_read(it6263->hdmi_regmap, HDMI_REG_SYS_STATUS, &status);
 
 	return (status & HPDETECT) ? connector_status_connected :
 					connector_status_disconnected;
@@ -775,6 +807,19 @@ static int it6263_probe(struct i2c_client *client,
 		ret = PTR_ERR(it6263->lvds_regmap);
 		goto unregister_lvds_i2c;
 	}
+
+	it6263->reset_gpio = devm_gpiod_get_optional(dev, "reset",
+							GPIOD_OUT_LOW);
+	if (IS_ERR(it6263->reset_gpio)) {
+		ret = PTR_ERR(it6263->reset_gpio);
+
+		if (ret != -EPROBE_DEFER)
+			dev_err(dev, "Failed to get reset gpio: %d\n", ret);
+
+		goto unregister_lvds_i2c;
+	}
+
+	it6263_reset(it6263);
 
 	ret = regmap_write(it6263->hdmi_regmap, HDMI_REG_SW_RST, HDMI_RST_ALL);
 	if (ret)
