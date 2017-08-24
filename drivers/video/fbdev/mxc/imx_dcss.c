@@ -23,6 +23,7 @@
 #include <linux/clk.h>
 #include <linux/cache.h>
 #include <asm/cacheflush.h>
+#include <asm/uaccess.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
@@ -139,6 +140,11 @@
 #define CTXLD_SB_BASE_ADDR	0x18
 #define CTXLD_SB_COUNT		0x1C
 
+#define TC_LINE1_INT		0x50
+#define TC_INTERRUPT_STATUS	0x5C
+#define TC_INTERRUPT_CONTROL	0x60
+#define TC_INTERRUPT_MASK	0x68
+
 /* define dcss state */
 #define DCSS_STATE_RESET	0x0
 #define DCSS_STATE_RUNNING	0x1
@@ -156,9 +162,10 @@
 #define IRQ_DPR_CH2		4
 #define IRQ_DPR_CH3		5
 #define IRQ_CTX_LD		6
-#define IRQ_DEC400D_CH1		7
-#define IRQ_DTRC_CH2		8
-#define IRQ_DTRC_CH3		9
+#define IRQ_TC_LINE1		8
+#define IRQ_DEC400D_CH1		15
+#define IRQ_DTRC_CH2		16
+#define IRQ_DTRC_CH3		17
 
 /* ctxld irqs status */
 #define RD_ERR			(1 << 16)
@@ -246,6 +253,11 @@ struct cbuffer{
 	uint32_t sb_data_len;	/* data length in elements   */
 	uint32_t db_data_len;
 	uint32_t esize;		/* size per element */
+};
+
+struct vsync_info {
+	wait_queue_head_t vwait;
+	unsigned long vcount;
 };
 
 struct ctxld_commit {
@@ -344,6 +356,7 @@ struct dcss_info {
 	uint32_t de_pol;
 	char disp_dev[NAME_LEN];
 	struct mxc_dispdrv_handle *dispdrv;
+	struct vsync_info vinfo;
 
 	atomic_t flush;
 };
@@ -520,6 +533,8 @@ static int dcss_setcolreg(unsigned regno, unsigned red, unsigned green,
 static int dcss_blank(int blank, struct fb_info *fbi);
 static int dcss_pan_display(struct fb_var_screeninfo *var,
 			    struct fb_info *fbi);
+static int dcss_ioctl(struct fb_info *fbi, unsigned int cmd,
+		      unsigned long arg);
 
 static struct fb_ops dcss_ops = {
 	.owner = THIS_MODULE,
@@ -529,6 +544,7 @@ static struct fb_ops dcss_ops = {
 	.fb_setcolreg	= dcss_setcolreg,
 	.fb_blank	= dcss_blank,
 	.fb_pan_display	= dcss_pan_display,
+	.fb_ioctl	= dcss_ioctl,
 	.fb_fillrect	= cfb_fillrect,
 	.fb_copyarea	= cfb_copyarea,
 	.fb_imageblit	= cfb_imageblit,
@@ -2055,6 +2071,43 @@ static void ctxld_irq_unmask(uint32_t irq_en, struct dcss_info *info)
 	writel(irq_en, info->base + chans->ctxld_addr + CTXLD_CTRL_STATUS_SET);
 }
 
+static void dtg_irq_mask(unsigned long hwirq,
+			 struct dcss_info *info)
+{
+	unsigned long irq_mask = 0;
+	struct dcss_channels *chans = &info->chans;
+
+	irq_mask = readl(info->base + chans->dtg_addr + TC_INTERRUPT_MASK);
+	writel(~(1 << (hwirq - 8)) & irq_mask,
+	       info->base + chans->dtg_addr + TC_INTERRUPT_MASK);
+}
+
+static void dtg_irq_unmask(unsigned long hwirq,
+			   struct dcss_info *info)
+{
+	unsigned long irq_mask = 0;
+	struct dcss_channels *chans = &info->chans;
+
+	irq_mask = readl(info->base + chans->dtg_addr + TC_INTERRUPT_MASK);
+
+	writel(1 << (hwirq - 8) | irq_mask,
+	       info->base + chans->dtg_addr + TC_INTERRUPT_MASK);
+}
+
+static void dtg_irq_clear(unsigned long hwirq,
+			  struct dcss_info *info)
+{
+	unsigned long irq_status = 0;
+	struct dcss_channels *chans = &info->chans;
+
+	irq_status = readl(info->base + chans->dtg_addr + TC_INTERRUPT_STATUS);
+	BUG_ON(!(irq_status & 1 << (hwirq - 8)));
+
+	/* write 1 to clear irq */
+	writel(1 << (hwirq - 8),
+	       info->base + chans->dtg_addr + TC_INTERRUPT_CONTROL);
+}
+
 static void dcss_ctxld_config(struct work_struct *work)
 {
 	int ret;
@@ -2132,7 +2185,6 @@ static int commit_to_fifo(uint32_t channel,
 	struct ctxld_commit *cc;
 	struct cbuffer *cb;
 	struct ctxld_unit *unit = NULL;
-	uint32_t ctxld_status, timeout;
 
 	if (channel > 2 || !info)
 		return -EINVAL;
@@ -2147,27 +2199,6 @@ static int commit_to_fifo(uint32_t channel,
 	chan_info = &chans->chan_info[channel];
 	cb = &chan_info->cb;
 	commit_size = cb->sb_data_len + cb->db_data_len;
-
-	/* timeout is 1000ms */
-	timeout = 1001;
-	/* TODO: workaround for making fifo commit to be synchronous */
-	ctxld_status = readl(info->base + CTX_LD_START + CTXLD_CTRL_STATUS);
-	while (--timeout && (ctxld_status & 0x1)) {
-		mdelay(1);
-		ctxld_status = readl(info->base + CTX_LD_START + CTXLD_CTRL_STATUS);
-	}
-
-	if (!timeout) {
-		dev_err(&pdev->dev, "%s: context loader timeout\n", __func__);
-
-		/* drop this commit */
-		cb->db_data_len = 0;
-		cb->sb_data_len = 0;
-
-		kfree(cc);
-
-		return -EBUSY;
-	}
 
 restart:
 	spin_lock(&cfifo->cqueue.lock);
@@ -2534,7 +2565,76 @@ static int dcss_pan_display(struct fb_var_screeninfo *var,
 		return ret;
 	}
 
+	/* TODO: blocking mode */
+	if (likely(!var->reserved[2]))
+		/* make pan display synchronously */
+		flush_workqueue(info->ctxld_wq);
+
 	return 0;
+}
+
+static int vcount_compare(unsigned long vcount,
+			  struct vsync_info *vinfo)
+{
+	int ret = 0;
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&vinfo->vwait.lock, irqflags);
+
+	ret = (vcount != vinfo->vcount) ? 1 : 0;
+
+	spin_unlock_irqrestore(&vinfo->vwait.lock, irqflags);
+
+	return ret;
+}
+
+static int dcss_wait_for_vsync(unsigned long crtc,
+			       struct dcss_info *info)
+{
+	int ret = 0;
+	unsigned long irqflags, vcount;
+	struct platform_device *pdev = info->pdev;
+
+	spin_lock_irqsave(&info->vinfo.vwait.lock, irqflags);
+	dtg_irq_unmask(IRQ_TC_LINE1, info);
+	vcount = info->vinfo.vcount;
+	spin_unlock_irqrestore(&info->vinfo.vwait.lock, irqflags);
+
+	ret = wait_event_interruptible_timeout(info->vinfo.vwait,
+					vcount_compare(vcount, &info->vinfo),
+					HZ);
+	if (!ret) {
+		dev_err(&pdev->dev, "wait vsync active timeout\n");
+		return -EBUSY;
+	}
+
+	return ret;
+}
+
+static int dcss_ioctl(struct fb_info *fbi, unsigned int cmd,
+		      unsigned long arg)
+{
+	int ret = 0;
+	unsigned long crtc;
+	void __user *argp = (void __user *)arg;
+	struct dcss_channel_info *cinfo = fbi->par;
+	struct dcss_info *info = cinfo->dev_data;
+	struct platform_device *pdev = cinfo->pdev;
+
+	switch (cmd) {
+	case FBIO_WAITFORVSYNC:
+		if (copy_from_user(&crtc, argp, sizeof(unsigned long)))
+			return -EFAULT;
+
+		ret = dcss_wait_for_vsync(crtc, info);
+		break;
+	default:
+		dev_err(&pdev->dev, "invalid ioctl command: 0x%x\n", cmd);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
 }
 
 static void ctxld_irq_clear(struct dcss_info *info)
@@ -2571,6 +2671,7 @@ static irqreturn_t dcss_irq_handler(int irq, void *dev_id)
 {
 	struct irq_desc *desc;
 	uint32_t irq_status;
+	unsigned long irqflags;
 	struct dcss_info *info = (struct dcss_info *)dev_id;
 	struct dcss_channels *chans = &info->chans;
 	struct dcss_channel_info *chan;
@@ -2593,6 +2694,16 @@ static irqreturn_t dcss_irq_handler(int irq, void *dev_id)
 		ctxld_irq_clear(info);
 		complete(&cfifo->complete);
 		break;
+	case IRQ_TC_LINE1:
+		dtg_irq_clear(IRQ_TC_LINE1, info);
+
+		spin_lock_irqsave(&info->vinfo.vwait.lock, irqflags);
+		info->vinfo.vcount++;
+		dtg_irq_mask(IRQ_TC_LINE1, info);
+		spin_unlock_irqrestore(&info->vinfo.vwait.lock, irqflags);
+
+		wake_up_all(&info->vinfo.vwait);
+		break;
 	case IRQ_DEC400D_CH1:
 	case IRQ_DTRC_CH2:
 	case IRQ_DTRC_CH3:
@@ -2606,6 +2717,7 @@ static int dcss_interrupts_init(struct dcss_info *info)
 {
 	int i, ret = 0;
 	struct irq_desc *desc;
+	struct dcss_channels *chans = &info->chans;
 	struct platform_device *pdev = info->pdev;
 
 	for (i = 0; i < DCSS_IRQS_NUM; i++) {
@@ -2617,6 +2729,10 @@ static int dcss_interrupts_init(struct dcss_info *info)
 		switch (desc->irq_data.hwirq) {
 		case 6:         /* CTX_LD */
 			ctxld_irq_unmask(SB_HP_COMP_EN, info);
+			break;
+		case 8:		/* dtg_programmable_1: for vsync */
+			/* TODO: (0, 0) or (last, last)? */
+			writel(0x0, info->base + chans->dtg_addr + TC_LINE1_INT);
 			break;
 		default:	/* TODO: add support later */
 			continue;
@@ -2828,6 +2944,8 @@ static int dcss_info_init(struct dcss_info *info)
 	}
 
 	platform_set_drvdata(pdev, info);
+	init_waitqueue_head(&info->vinfo.vwait);
+	info->vinfo.vcount = 0;
 
 	goto out;
 
