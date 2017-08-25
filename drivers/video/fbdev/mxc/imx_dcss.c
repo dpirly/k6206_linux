@@ -2629,7 +2629,6 @@ static int dcss_ioctl(struct fb_info *fbi, unsigned int cmd,
 		ret = dcss_wait_for_vsync(crtc, info);
 		break;
 	default:
-		dev_err(&pdev->dev, "invalid ioctl command: 0x%x\n", cmd);
 		ret = -EINVAL;
 		break;
 	}
