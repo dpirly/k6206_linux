@@ -45,6 +45,11 @@
 #include "mxc_dispdrv.h"
 #include "imx_dcss_table.h"
 
+#ifdef CONFIG_SW_SYNC
+#include <linux/file.h>
+#include <sync_debug.h>
+#endif
+
 /* sub engines address start offset */
 #define HDR_CHAN1_START		0x00000
 #define HDR_CHAN2_START		0x04000
@@ -308,6 +313,13 @@ struct dcss_channel_info {
 	bool dpr_scaler_en;		/* record dpr and scaler enabled or not */
 
 	void *dev_data;			/* pointer to dcss_info */
+
+#ifdef CONFIG_SW_SYNC
+	// fence info.
+	struct sync_timeline *timeline;
+	int timeline_value;
+	int signal_fence;
+#endif
 };
 
 struct dcss_channels {
@@ -2239,6 +2251,10 @@ static void dtg_irq_clear(unsigned long hwirq,
 	       info->base + chans->dtg_addr + TC_INTERRUPT_CONTROL);
 }
 
+#ifdef CONFIG_SW_SYNC
+static int dcss_sync_signal_fence(struct sync_timeline *obj, int value);
+#endif
+
 static void dcss_ctxld_work(struct work_struct *work)
 {
 	struct dcss_info *info;
@@ -2252,6 +2268,10 @@ static void dcss_ctxld_work(struct work_struct *work)
 	uint32_t db_data_len = 0;
 	uint32_t count = 0;
 	int index, ret;
+#ifdef CONFIG_SW_SYNC
+	struct dcss_channel_info *cinfo;
+	int cid, signal_id = 0;
+#endif
 
 	info = container_of(work, struct dcss_info, work);
 	count = sizeof(struct ctxld_unit);
@@ -2297,6 +2317,19 @@ again:
 	}
 
 unlock_do:
+#ifdef CONFIG_SW_SYNC
+	for (index = 0; index < 3; index++) {
+		cm = cc[index];
+		if (cm == NULL)
+			continue;
+		cinfo = &chans->chan_info[cm->channel_id];
+		if (cinfo->signal_fence < 1) {
+			cinfo->signal_fence++;
+			signal_id |= 1 << cm->channel_id;
+		}
+	}
+#endif
+
 	spin_unlock(&info->llock);
 	for (index = 0; index < 4; index++) {
 		cm = cc[index];
@@ -2343,6 +2376,15 @@ unlock_do:
 	ret = wait_for_completion_timeout(&cfifo->complete, HZ);
 	if (!ret)	/* timeout */
 		dev_err(&pdev->dev, "wait ctxld finish timeout\n");
+
+#ifdef CONFIG_SW_SYNC
+	for (cid = DCSS_CHAN_MAIN; cid <= DCSS_CHAN_THIRD; cid++) {
+		cinfo = &chans->chan_info[cid];
+		if (signal_id & (1 << cid)) {
+			dcss_sync_signal_fence(cinfo->timeline, 1);
+		}
+	}
+#endif
 
 	dev_dbg(&pdev->dev, "finish ctxld handler\n");
 }
@@ -2479,6 +2521,14 @@ static int commit_work(uint32_t channel,
 		}
 		num[cm->channel_id]++;
 	}
+
+#ifdef CONFIG_SW_SYNC
+	/* main channel not support fence now */
+	if (merge && channel > 0) {
+		chan_info->signal_fence--;
+	}
+#endif
+
 	spin_unlock(&info->llock);
 
 	queue_work(info->ctxld_wq, &info->work);
@@ -2902,6 +2952,63 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SW_SYNC
+extern struct sync_timeline *sync_timeline_create(const char *name);
+extern struct sync_pt *sync_pt_create(struct sync_timeline *obj, int size,
+                 unsigned int value);
+extern void sync_timeline_signal(struct sync_timeline *obj, unsigned int inc);
+
+static struct sync_timeline* dcss_sync_create_timeline(const char* name)
+{
+	struct sync_timeline *obj;
+	obj = sync_timeline_create(name);
+	if (!obj) {
+		printk("dcss_sync_create_timeline failed\n");
+	}
+
+	return obj;
+}
+
+static int dcss_sync_create_fence(struct sync_timeline *obj, int value)
+{
+	int fd = get_unused_fd_flags(O_CLOEXEC);
+	int err;
+	struct sync_pt *pt;
+	struct sync_file *sync_file;
+
+	if (fd < 0)
+		return fd;
+
+	pt = sync_pt_create(obj, sizeof(*pt), value);
+	if (!pt) {
+		err = -ENOMEM;
+		goto err;
+	}
+
+	sync_file = sync_file_create(&pt->base);
+	fence_put(&pt->base);
+	if (!sync_file) {
+		err = -ENOMEM;
+		goto err;
+	}
+
+	fd_install(fd, sync_file->file);
+
+	return fd;
+
+err:
+	printk("dcss_sync_create_fence failed\n");
+	put_unused_fd(fd);
+	return err;
+}
+
+static int dcss_sync_signal_fence(struct sync_timeline *obj, int value)
+{
+	sync_timeline_signal(obj, value);
+	return 0;
+}
+#endif
+
 static int dcss_pan_display(struct fb_var_screeninfo *var,
 			    struct fb_info *fbi)
 {
@@ -2946,6 +3053,15 @@ static int dcss_pan_display(struct fb_var_screeninfo *var,
 		dev_err(&pdev->dev, "commit config failed\n");
 		return ret;
 	}
+
+#ifdef CONFIG_SW_SYNC
+	/* main channel not support fence now */
+	if (cinfo->channel_id > 0) {
+		var->reserved[3] = dcss_sync_create_fence(cinfo->timeline,
+				cinfo->timeline_value);
+		cinfo->timeline_value++;
+	}
+#endif
 
 	return 0;
 }
@@ -3215,6 +3331,18 @@ static int dcss_register_one_ch(uint32_t ch_id,
 		dev_err(&info->pdev->dev, "register channel %d failed\n", ch_id);
 		return ret;
 	}
+
+#ifdef CONFIG_SW_SYNC
+	cinfo->timeline_value = 1;
+	if (ch_id == 0)
+		cinfo->signal_fence = 1;
+	else
+		cinfo->signal_fence = 2;
+	cinfo->timeline = dcss_sync_create_timeline("display");
+	if (cinfo->timeline == NULL) {
+		dev_err(&info->pdev->dev, "failed to create sync point\n");
+	}
+#endif
 
 	return ret;
 }
