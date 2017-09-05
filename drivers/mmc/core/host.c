@@ -30,6 +30,7 @@
 #include "host.h"
 #include "slot-gpio.h"
 #include "pwrseq.h"
+#include "sdio_ops.h"
 
 static DEFINE_IDA(mmc_host_ida);
 static DEFINE_SPINLOCK(mmc_host_lock);
@@ -108,6 +109,12 @@ void mmc_retune_hold(struct mmc_host *host)
 {
 	if (!host->hold_retune)
 		host->retune_now = 1;
+	host->hold_retune += 1;
+}
+
+void mmc_retune_hold_now(struct mmc_host *host)
+{
+	host->retune_now = 0;
 	host->hold_retune += 1;
 }
 
@@ -303,6 +310,8 @@ int mmc_of_parse(struct mmc_host *host)
 		host->pm_caps |= MMC_PM_WAKE_SDIO_IRQ;
 	if (of_get_property(np, "pm-ignore-notify", NULL))
 		host->pm_caps |= MMC_PM_IGNORE_PM_NOTIFY;
+	if (of_property_read_bool(np, "mmc-ddr-3_3v"))
+		host->caps |= MMC_CAP_3_3V_DDR;
 	if (of_property_read_bool(np, "mmc-ddr-1_8v"))
 		host->caps |= MMC_CAP_1_8V_DDR;
 	if (of_property_read_bool(np, "mmc-ddr-1_2v"))
@@ -409,6 +418,7 @@ again:
 	spin_lock_init(&host->lock);
 	init_waitqueue_head(&host->wq);
 	INIT_DELAYED_WORK(&host->detect, mmc_rescan);
+	INIT_DELAYED_WORK(&host->sdio_irq_work, sdio_irq_work);
 	setup_timer(&host->retune_timer, mmc_retune_timer, (unsigned long)host);
 
 	/*

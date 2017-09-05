@@ -34,6 +34,7 @@
 #include <linux/freezer.h>
 #include <linux/kfifo.h>
 #include <linux/kthread.h>
+#include <linux/log2.h>
 #include <linux/regulator/consumer.h>
 #include <linux/scatterlist.h>
 #include <linux/videodev2.h>
@@ -685,7 +686,6 @@ static void fill_sb(struct cbuffer *cb,
 	cb->sb_data_len++;
 }
 
-#if 0
 static void fill_db(struct cbuffer *cb,
 		    uint32_t offset,
 		    uint32_t value)
@@ -704,7 +704,6 @@ static void fill_db(struct cbuffer *cb,
 	fill_unit(unit, offset, value);
 	cb->db_data_len++;
 }
-#endif
 
 static void ctxld_fifo_info_print(struct ctxld_fifo *cfifo)
 {
@@ -1321,9 +1320,95 @@ static int dcss_decomp_config(uint32_t decomp_ch, struct dcss_info *info)
 	return 0;
 }
 
+/* for both luma and chroma
+ */
+static int dpr_pix_x_calc(u32 pix_size,
+			  u32 width,
+			  u32 tile_type)
+{
+	unsigned int num_pix_x_in_64byte;
+	unsigned int pix_x_div_64byte_mod;
+	unsigned int pix_x_offset;
+
+	if (pix_size > 2)
+		return -EINVAL;
+
+	/* 1st calculation step */
+	switch (tile_type) {
+	case TILE_TYPE_LINEAR:
+		/* Divisable by 64 bytes */
+		num_pix_x_in_64byte = 64 / (1 << pix_size);
+		break;
+	/* 4x4 tile or super tile */
+	case TILE_TYPE_GPU_STANDARD:
+	case TILE_TYPE_GPU_SUPER:
+		BUG_ON(!pix_size);
+		num_pix_x_in_64byte = 64 / (4 * (1 << pix_size));
+		break;
+	/* 8bpp YUV420 8x8 tile */
+	case TILE_TYPE_VPU_2PYUV420:
+		BUG_ON(pix_size);
+		num_pix_x_in_64byte = 64 / (8 * (1 << pix_size));
+		break;
+	/* 8bpp or 10bpp VP9 4x4 tile */
+	case TILE_TYPE_VPU_2PVP9:
+		BUG_ON(pix_size == 2);
+		num_pix_x_in_64byte = 64 / (4 * (1 << pix_size));
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/* 2nd calculation step */
+	pix_x_div_64byte_mod = width % num_pix_x_in_64byte;
+	pix_x_offset = !pix_x_div_64byte_mod ? 0 :
+				(num_pix_x_in_64byte - pix_x_div_64byte_mod);
+
+	return width + pix_x_offset;
+}
+
+/* Divisable by 4 or 8 */
+static int dpr_pix_y_calc(u32 rtr_lines,
+			  u32 height,
+			  u32 tile_type)
+{
+	unsigned int num_rows_buf;
+	unsigned int pix_y_mod = 0;
+	unsigned int pix_y_offset = 0;
+
+	if (rtr_lines != 0 && rtr_lines != 1)
+		return -EINVAL;
+
+	switch (tile_type) {
+	case TILE_TYPE_LINEAR:
+		num_rows_buf = rtr_lines ? 4 : 8;
+		break;
+	/* 4x4 tile or super tile */
+	case TILE_TYPE_GPU_STANDARD:
+	case TILE_TYPE_GPU_SUPER:
+		num_rows_buf = 4;
+		break;
+	/* 8bpp YUV420 8x8 tile */
+	case TILE_TYPE_VPU_2PYUV420:
+		num_rows_buf = 8;
+		break;
+	/* 8bpp or 10bpp VP9 4x4 tile */
+	case TILE_TYPE_VPU_2PVP9:
+		num_rows_buf = 4;
+		break;
+	default:
+		return -EINVAL;
+	}
+	pix_y_mod = height % num_rows_buf;
+	pix_y_offset = !pix_y_mod ? 0 : (num_rows_buf - pix_y_mod);
+
+	return height + pix_y_offset;
+}
+
 static int dcss_dpr_config(uint32_t dpr_ch, struct dcss_info *info)
 {
-	uint32_t pitch;
+	uint32_t pitch, pix_size;
+	uint32_t num_pix_x, num_pix_y;
 	bool need_resolve = false;
 	struct platform_device *pdev = info->pdev;
 	struct dcss_channels *chans = &info->chans;
@@ -1395,11 +1480,19 @@ static int dcss_dpr_config(uint32_t dpr_ch, struct dcss_info *info)
 
 	fill_sb(cb, chan_info->dpr_addr + 0xc0, fix->smem_start);
 	fill_sb(cb, chan_info->dpr_addr + 0x90, 0x2);
-	fill_sb(cb, chan_info->dpr_addr + 0xa0, input->width);
-	fill_sb(cb, chan_info->dpr_addr + 0xb0, input->height);
+
+	pix_size = ilog2(input->bits_per_pixel >> 3);
+
+	num_pix_x = dpr_pix_x_calc(pix_size, input->width, input->tile_type);
+	BUG_ON(num_pix_x < 0);
+	fill_sb(cb, chan_info->dpr_addr + 0xa0, num_pix_x);
 
 	switch (fmt_is_yuv(input->format)) {
 	case 0:         /* RGB */
+		num_pix_y = dpr_pix_y_calc(1, input->height, input->tile_type);
+		BUG_ON(num_pix_y < 0);
+		fill_sb(cb, chan_info->dpr_addr + 0xb0, num_pix_y);
+
 		if (!need_resolve)
 			/* Bypass resolve */
 			fill_sb(cb, chan_info->dpr_addr + 0x50, 0xe4203);
@@ -1412,12 +1505,16 @@ static int dcss_dpr_config(uint32_t dpr_ch, struct dcss_info *info)
 		break;
 	case 2:         /* YUV 2P */
 		/* Two planes YUV format */
+		num_pix_y = dpr_pix_y_calc(0, input->height, input->tile_type);
+		BUG_ON(num_pix_y < 0);
+		fill_sb(cb, chan_info->dpr_addr + 0xb0, num_pix_y);
+
 		fill_sb(cb, chan_info->dpr_addr + 0x50, 0xc1);
 		fill_sb(cb, chan_info->dpr_addr + 0xe0, 0x2);
 		fill_sb(cb, chan_info->dpr_addr + 0x110,
 			fix->smem_start +
 			var->xres * var->yres * (var->bits_per_pixel >> 3));
-		fill_sb(cb, chan_info->dpr_addr + 0xf0, var->xres);
+		fill_sb(cb, chan_info->dpr_addr + 0xf0, num_pix_x);
 
 		/* TODO: Require alignment handling:
 		 * value must be evenly divisible by
@@ -1425,7 +1522,9 @@ static int dcss_dpr_config(uint32_t dpr_ch, struct dcss_info *info)
 		 * MODE_CTRL0: RTR_4LINE_BUF_EN.
 		 * UV height is 1/2 height of Luma.
 		 */
-		fill_sb(cb, chan_info->dpr_addr + 0x100, ALIGN(var->yres >> 1, 8));
+		num_pix_y = dpr_pix_y_calc(0, input->height >> 1, input->tile_type);
+		BUG_ON(num_pix_y < 0);
+		fill_sb(cb, chan_info->dpr_addr + 0x100, num_pix_y);
 		break;
 	default:
 		return -EINVAL;
@@ -1455,6 +1554,7 @@ static int dcss_scaler_config(uint32_t scaler_ch, struct dcss_info *info)
 	struct dcss_pixmap *input;
 	struct cbuffer *cb;
 	int scale_v_luma_inc, scale_h_luma_inc;
+	uint32_t align_width, align_height;
 	const struct fb_videomode *dmode = info->dft_disp_mode;
 
 	if (scaler_ch > 2) {
@@ -1727,23 +1827,33 @@ static int dcss_scaler_config(uint32_t scaler_ch, struct dcss_info *info)
 	fill_sb(cb, chan_info->scaler_addr + 0x14, 0x2);
 
 	/* Scaler Input Luma Resolution
-	 * TODO: Alighment: WIDTH and HEIGHT divisable by 4.
+	 * Alighment Workaround for YUV420:
+	 * 'width' divisable by 16, 'height' divisable by 8.
 	 */
+
+	if (fmt_is_yuv(input->format) == 2) {
+		align_width  = round_down(input->width, 16);
+		align_height = round_down(input->height, 8);
+	} else {
+		align_width  = input->width;
+		align_height = input->height;
+	}
+
 	fill_sb(cb, chan_info->scaler_addr + 0x18,
-		(input->height - 1) << 16 | (input->width - 1));
+		(align_height - 1) << 16 | (align_width - 1));
 
 	/* Scaler Input Chroma Resolution */
 	switch (fmt_is_yuv(input->format)) {
 	case 0:         /* ARGB8888 */
 		fill_sb(cb, chan_info->scaler_addr + 0x1c,
-			(input->height - 1) << 16 | (input->width - 1));
+			(align_height - 1) << 16 | (align_width - 1));
 		break;
 	case 1:         /* TODO: YUV422 or YUV444 */
 		break;
 	case 2:         /* YUV420 */
 		fill_sb(cb, chan_info->scaler_addr + 0x1c,
-			((input->height >> 1) - 1) << 16 |
-			((input->width >> 1) - 1));
+			((align_height >> 1) - 1) << 16 |
+			((align_width >> 1) - 1));
 		break;
 	default:
 		return -EINVAL;
@@ -1772,9 +1882,9 @@ static int dcss_scaler_config(uint32_t scaler_ch, struct dcss_info *info)
 
 	/* scale ratio: ###.#_####_####_#### */
 	/* vertical ratio */
-	scale_v_luma_inc = ((input->height << 13) + (dmode->yres >> 1)) / dmode->yres;
+	scale_v_luma_inc = ((align_height << 13) + (dmode->yres >> 1)) / dmode->yres;
 	/* horizontal ratio */
-	scale_h_luma_inc = ((input->width << 13) + (dmode->xres >> 1)) / dmode->xres;
+	scale_h_luma_inc = ((align_width << 13) + (dmode->xres >> 1)) / dmode->xres;
 
 	fill_sb(cb, chan_info->scaler_addr + 0x48, 0x0);
 	fill_sb(cb, chan_info->scaler_addr + 0x4c, scale_v_luma_inc);
@@ -1903,17 +2013,17 @@ static void dtg_channel_timing_config(int blank,
 	switch (blank) {
 	case FB_BLANK_UNBLANK:
 		/* set display window for one channel */
-		fill_sb(cb, chans->dtg_addr + ch_ulc_reg,
+		fill_db(cb, chans->dtg_addr + ch_ulc_reg,
 			pos->ulc_y << 16 | pos->ulc_x);
-		fill_sb(cb, chans->dtg_addr + ch_lrc_reg,
+		fill_db(cb, chans->dtg_addr + ch_lrc_reg,
 			pos->lrc_y << 16 | pos->lrc_x);
 		break;
 	case FB_BLANK_NORMAL:
 	case FB_BLANK_VSYNC_SUSPEND:
 	case FB_BLANK_HSYNC_SUSPEND:
 	case FB_BLANK_POWERDOWN:
-		fill_sb(cb, chans->dtg_addr + ch_ulc_reg, 0x0);
-		fill_sb(cb, chans->dtg_addr + ch_lrc_reg, 0x0);
+		fill_db(cb, chans->dtg_addr + ch_ulc_reg, 0x0);
+		fill_db(cb, chans->dtg_addr + ch_lrc_reg, 0x0);
 		break;
 	default:
 		return;
@@ -1939,19 +2049,19 @@ static void dtg_global_timing_config(struct dcss_info *info)
 		    dmode->right_margin + dmode->hsync_len - 1;
 	dtg_lrc_y = dmode->yres + dmode->upper_margin +
 		    dmode->lower_margin + dmode->vsync_len - 1;
-	fill_sb(cb, chans->dtg_addr + 0x4, dtg_lrc_y << 16 | dtg_lrc_x);
+	fill_db(cb, chans->dtg_addr + 0x4, dtg_lrc_y << 16 | dtg_lrc_x);
 
 	/* Active Region Timing config*/
 	dis_ulc_x = dmode->left_margin  + dmode->hsync_len - 1;
 	dis_ulc_y = dmode->upper_margin + dmode->lower_margin +
 		    dmode->vsync_len - 1;
-	fill_sb(cb, chans->dtg_addr + 0x8, dis_ulc_y << 16 | dis_ulc_x);
+	fill_db(cb, chans->dtg_addr + 0x8, dis_ulc_y << 16 | dis_ulc_x);
 
 	dis_lrc_x = dmode->xres + dmode->left_margin +
 		    dmode->hsync_len - 1;
 	dis_lrc_y = dmode->yres + dmode->upper_margin +
 		    dmode->lower_margin + dmode->vsync_len - 1;
-	fill_sb(cb, chans->dtg_addr + 0xc, dis_lrc_y << 16 | dis_lrc_x);
+	fill_db(cb, chans->dtg_addr + 0xc, dis_lrc_y << 16 | dis_lrc_x);
 }
 
 static int dcss_dtg_config(uint32_t ch_id, struct dcss_info *info)
@@ -2159,9 +2269,11 @@ static void dcss_ctxld_config(struct work_struct *work)
 		       info->base + chans->ctxld_addr + CTXLD_SB_COUNT);
 	}
 
+	/* configure db buffer */
 	if (cc->db_data_len) {
-		writel(cfifo->dma_handle + cfifo->sgl[0].offset +
-		       cc->sb_data_len * kfifo_esize(&cfifo->fifo),
+		writel(cfifo->dma_handle +
+		       (cc->fifo_in + cc->sb_data_len) *
+		       kfifo_esize(&cfifo->fifo),
 		       info->base + chans->ctxld_addr + CTXLD_DB_BASE_ADDR);
 		writel(cc->db_data_len,
 		       info->base + chans->ctxld_addr + CTXLD_DB_COUNT);
@@ -2309,12 +2421,15 @@ static int dcss_check_var(struct fb_var_screeninfo *var,
 			  struct fb_info *fbi)
 {
 	uint32_t fb_size;
+	uint32_t scale_ratio_mode_x, scale_ratio_mode_y;
+	uint32_t scale_ratio_x, scale_ratio_y;
 	struct dcss_channel_info *cinfo = fbi->par;
 	struct dcss_info *info = cinfo->dev_data;
 	struct platform_device *pdev = info->pdev;
 	const struct fb_bitfield *rgb = NULL;
 	const struct pix_fmt_info *format = NULL;
 	struct fb_fix_screeninfo *fix = &fbi->fix;
+	const struct fb_videomode *dmode = info->dft_disp_mode;
 
 	if (var->xres > MAX_WIDTH || var->yres > MAX_HEIGHT) {
 		dev_err(&pdev->dev, "unsupport display resolution\n");
@@ -2333,7 +2448,6 @@ static int dcss_check_var(struct fb_var_screeninfo *var,
 
 	switch (var->grayscale) {
 	case 0:		/* TODO: color */
-		break;
 	case 1:		/* grayscale */
 		return -EINVAL;
 	default:	/* fourcc */
@@ -2344,6 +2458,69 @@ static int dcss_check_var(struct fb_var_screeninfo *var,
 		}
 		var->bits_per_pixel = format->bpp;
 	}
+
+	/* Add alignment check for scaler */
+	switch (fmt_is_yuv(var->grayscale)) {
+	case 0:         /* ARGB8888 */
+	case 2:         /* YUV420 */
+		if (ALIGN(var->xres, 4) != var->xres ||
+		    ALIGN(var->yres, 4) != var->yres) {
+			dev_err(&pdev->dev, "width or height is not aligned\n");
+			return -EINVAL;
+		}
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/* Add scale ratio check:
+	 * Maximum scale down ratio is 1/7;
+	 * Maximum scale up   ratio is 8;
+	 */
+	if (dmode->xres > var->xres) {
+		/* upscaling */
+		scale_ratio_mode_x = dmode->xres % var->xres;
+		scale_ratio_mode_y = dmode->yres % var->yres;
+		scale_ratio_x = (dmode->xres - scale_ratio_mode_x) / var->xres;
+		scale_ratio_y = (dmode->yres - scale_ratio_mode_y) / var->yres;
+		if (scale_ratio_x >= 8) {
+			if ((scale_ratio_x == 8 && scale_ratio_mode_x > 0) ||
+			    (scale_ratio_x > 8)) {
+				dev_err(&pdev->dev, "unsupport scaling ration for width\n");
+				return -EINVAL;
+			}
+		}
+
+		if (scale_ratio_y >= 8) {
+			if ((scale_ratio_y == 8 && scale_ratio_mode_y > 0) ||
+			    (scale_ratio_y > 8)) {
+				dev_err(&pdev->dev, "unsupport scaling ration for height\n");
+				return -EINVAL;
+			}
+		}
+	} else {
+		/* downscaling */
+		scale_ratio_mode_x = var->xres % dmode->xres;
+		scale_ratio_mode_y = var->yres % dmode->yres;
+		scale_ratio_x = (var->xres - scale_ratio_mode_x) / dmode->xres;
+		scale_ratio_y = (var->yres - scale_ratio_mode_y) / dmode->yres;
+		if (scale_ratio_x >= 7) {
+			if ((scale_ratio_x == 7 && scale_ratio_mode_x > 0) ||
+			    (scale_ratio_x > 7)) {
+				dev_err(&pdev->dev, "unsupport scaling ration for width\n");
+				return -EINVAL;
+			}
+		}
+
+		if (scale_ratio_y >= 7) {
+			if ((scale_ratio_y == 7 && scale_ratio_mode_y > 0) ||
+			    (scale_ratio_y > 7)) {
+				dev_err(&pdev->dev, "unsupport scaling ration for height\n");
+				return -EINVAL;
+			}
+		}
+	}
+
 	fix->line_length = var->xres * (var->bits_per_pixel >> 3);
 	fb_size = var->yres_virtual * fix->line_length;
 
@@ -2503,7 +2680,7 @@ static int dcss_channel_blank(int blank,
 		return -EINVAL;
 	}
 
-	fill_sb(cb, chans->dtg_addr + 0x0, dtg_ctrl);
+	fill_db(cb, chans->dtg_addr + 0x0, dtg_ctrl);
 
 	return 0;
 }
@@ -3089,7 +3266,8 @@ static int dcss_probe(struct platform_device *pdev)
 	if (ret)
 		goto kfree_info;
 
-	/* TODO: reset DCSS to make it clean */
+	/* reset DCSS to make sure in reset state*/
+	writel(0xffffffff, info->blkctl_base + 0x8);
 
 	/* Clocks select: before dcss de-resets */
 	if (!strcmp(info->disp_dev, "hdmi_disp"))

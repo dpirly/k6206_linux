@@ -97,6 +97,8 @@
 #define FLEXSPI_MCR2_ABR_CMD_MASK	(1 << FLEXSPI_MCR2_ABR_CMD_SHIFT)
 
 #define FLEXSPI_AHBCR			0x0c
+#define FLEXSPI_AHBCR_RDADDROPT_SHIFT	6
+#define FLEXSPI_AHBCR_RDADDROPT_MASK	(1 << FLEXSPI_AHBCR_RDADDROPT_SHIFT)
 #define FLEXSPI_AHBCR_PREF_EN_SHIFT	5
 #define FLEXSPI_AHBCR_PREF_EN_MASK	(1 << FLEXSPI_AHBCR_PREF_EN_SHIFT)
 #define FLEXSPI_AHBCR_BUFF_EN_SHIFT	4
@@ -697,7 +699,6 @@ fsl_flexspi_runcmd(struct fsl_flexspi *flex, u8 cmd, unsigned int addr, int len)
 		    (reg & FLEXSPI_STS0_SEQ_IDLE_MASK))
 			break;
 		udelay(1);
-		dev_err(flex->dev, "The controller is busy, 0x%x\n", reg);
 	} while (1);
 
 	/* trigger the LUT now */
@@ -878,7 +879,9 @@ static void fsl_flexspi_init_ahb_read(struct fsl_flexspi *flex)
 		FLEXSPI_AHBRXBUF0CR7_PREF_MASK),
 	       base + FLEXSPI_AHBRX_BUF7CR0);
 
-	writel(FLEXSPI_AHBCR_PREF_EN_MASK, base + FLEXSPI_AHBCR);
+	/* prefetch and no start address alignment limitation */
+	writel(FLEXSPI_AHBCR_PREF_EN_MASK | FLEXSPI_AHBCR_RDADDROPT_MASK,
+	       base + FLEXSPI_AHBCR);
 
 	/* Set the default lut sequence for AHB Read. */
 	seqid = fsl_flexspi_get_seqid(flex, nor->read_opcode);
@@ -1027,6 +1030,7 @@ static ssize_t fsl_flexspi_read(struct spi_nor *nor, loff_t from,
 		size_t len, u_char *buf)
 {
 	struct fsl_flexspi *flex = nor->priv;
+	int i, j;
 
 	/* if necessary,ioremap buffer before AHB read, */
 	if (!flex->ahb_addr) {
@@ -1059,10 +1063,20 @@ static ssize_t fsl_flexspi_read(struct spi_nor *nor, loff_t from,
 		}
 	}
 
-	/* Read out the data directly from the AHB buffer.*/
-	memcpy(buf,
-	       flex->ahb_addr + flex->chip_base_addr + from - flex->memmap_offs,
-	       len);
+	/* For non-8-byte alignment cases */
+	if (from % 8) {
+		j = 8 - (from & 0x7);
+		for (i = 0; i < j; ++i) {
+			memcpy(buf + i, flex->ahb_addr + flex->chip_base_addr
+			       + from - flex->memmap_offs + i, 1);
+		}
+		memcpy(buf + j, flex->ahb_addr + flex->chip_base_addr + from
+		       - flex->memmap_offs + j, len - j);
+	} else {
+		/* Read out the data directly from the AHB buffer.*/
+		memcpy(buf, flex->ahb_addr + flex->chip_base_addr + from
+		       - flex->memmap_offs, len);
+	}
 
 	return len;
 }
