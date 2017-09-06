@@ -271,6 +271,8 @@ struct ctxld_commit {
 	uint32_t db_data_len;
 	uint32_t sb_trig_pos;
 	uint32_t db_trig_pos;
+	uint32_t size;	/* buffer size */
+	int channel_id;
 };
 
 struct ctxld_fifo {
@@ -361,6 +363,11 @@ struct dcss_info {
 	ktime_t vsync_nf_timestamp;
 
 	atomic_t flush;
+	// ctxld buffer.
+	uint32_t size;
+	void *vaddr;
+	dma_addr_t dma_handle;
+	struct work_struct work;
 };
 
 const struct fb_videomode imx_cea_mode[100] = {
@@ -2232,6 +2239,114 @@ static void dtg_irq_clear(unsigned long hwirq,
 	       info->base + chans->dtg_addr + TC_INTERRUPT_CONTROL);
 }
 
+static void dcss_ctxld_work(struct work_struct *work)
+{
+	struct dcss_info *info;
+	struct platform_device *pdev;
+	struct dcss_channels *chans;
+	struct ctxld_fifo *cfifo;
+	struct ctxld_commit *cc[4], *cm = NULL;
+	struct list_head* node = NULL;
+	uint32_t sb_data_len = 0;
+	uint32_t sb_hp_data_len = 0;
+	uint32_t db_data_len = 0;
+	uint32_t count = 0;
+	int index, ret;
+
+	info = container_of(work, struct dcss_info, work);
+	count = sizeof(struct ctxld_unit);
+	pdev = info->pdev;
+	chans = &info->chans;
+	cfifo = &info->cfifo;
+	cc[0] = cc[1] = cc[2] = cc[3] = NULL;
+
+	spin_lock(&info->llock);
+	if (list_empty(&info->ctxld_list)) {
+		spin_unlock(&info->llock);
+		return;
+	}
+
+	cm = list_first_entry(&info->ctxld_list, struct ctxld_commit, list);
+	if (cm == NULL || cm->channel_id < 0 || cm->channel_id > 3) {
+		spin_unlock(&info->llock);
+		return;
+	}
+	list_del(&cm->list);
+	cc[cm->channel_id] = cm;
+	if (cm->channel_id == 3) {
+		goto unlock_do;
+	}
+
+again:
+	if (list_empty(&info->ctxld_list)) {
+		goto unlock_do;
+	}
+
+	// handle different channel commits.
+	list_for_each(node, &info->ctxld_list) {
+		if (node == NULL) {
+			break;
+		}
+		cm = list_entry(node, struct ctxld_commit, list);
+		if (cm->channel_id == 3 || cc[cm->channel_id] != NULL) {
+			break;
+		}
+		cc[cm->channel_id] = cm;
+		list_del(&cm->list);
+		goto again;
+	}
+
+unlock_do:
+	spin_unlock(&info->llock);
+	for (index = 0; index < 4; index++) {
+		cm = cc[index];
+		if (cm == NULL)
+			continue;
+		memcpy(info->vaddr + sb_data_len * count,
+				cm->data, cm->sb_data_len * count);
+		sb_data_len += cm->sb_data_len;
+		sb_hp_data_len += cm->sb_data_len;
+	}
+	for (index = 0; index < 4; index++) {
+		cm = cc[index];
+		if (cm == NULL)
+			continue;
+		memcpy(info->vaddr + (sb_data_len + db_data_len) * count,
+				cm->data + cm->sb_data_len * count, cm->db_data_len * count);
+		db_data_len += cm->db_data_len;
+		kfree(cm->data);
+		kfree(cm);
+	}
+
+	/* configure sb buffer */
+	if (sb_data_len) {
+		/* first store sb and than store db */
+		writel(info->dma_handle,
+		       info->base + chans->ctxld_addr + CTXLD_SB_BASE_ADDR);
+		writel(sb_hp_data_len |
+		       ((sb_data_len - sb_hp_data_len) << 16),
+		       info->base + chans->ctxld_addr + CTXLD_SB_COUNT);
+	}
+
+	if (db_data_len) {
+		writel(info->dma_handle + sb_data_len * count,
+		       info->base + chans->ctxld_addr + CTXLD_DB_BASE_ADDR);
+		writel(db_data_len,
+		       info->base + chans->ctxld_addr + CTXLD_DB_COUNT);
+	}
+
+	/* enable ctx_ld */
+	writel(0x1, info->base + chans->ctxld_addr + CTXLD_CTRL_STATUS_SET);
+
+	/* wait finish */
+	reinit_completion(&cfifo->complete);
+	ret = wait_for_completion_timeout(&cfifo->complete, HZ);
+	if (!ret)	/* timeout */
+		dev_err(&pdev->dev, "wait ctxld finish timeout\n");
+
+	dev_dbg(&pdev->dev, "finish ctxld handler\n");
+}
+
 static void dcss_ctxld_config(struct work_struct *work)
 {
 	int ret;
@@ -2297,6 +2412,82 @@ static void dcss_ctxld_config(struct work_struct *work)
 	kfree(cc);
 
 	dev_dbg(&pdev->dev, "finish ctxld config\n");
+}
+
+static int commit_work(uint32_t channel,
+			  struct dcss_info *info, int merge)
+{
+	int ret = 0;
+	uint32_t count = 0, commit_size;
+	struct platform_device *pdev = info->pdev;
+	struct dcss_channels *chans;
+	struct dcss_channel_info *chan_info;
+	struct ctxld_commit *cc, *cm;
+	struct cbuffer *cb;
+	struct ctxld_unit *unit = NULL;
+	struct list_head* node = NULL;
+	int num[3];
+
+	if (channel > 2 || !info)
+		return -EINVAL;
+
+	cc = (struct ctxld_commit *)kzalloc(sizeof(*cc), GFP_KERNEL);
+	if (!cc)
+		return -ENOMEM;
+	INIT_LIST_HEAD(&cc->list);
+
+	count = sizeof(struct ctxld_unit);
+	chans = &info->chans;
+	chan_info = &chans->chan_info[channel];
+	cb = &chan_info->cb;
+	commit_size = cb->sb_data_len + cb->db_data_len;
+	cc->data = kzalloc(commit_size * count, GFP_KERNEL);
+	if (!cc->data) {
+		kfree(cc);
+		return -ENOMEM;
+	}
+	cc->size = commit_size;
+	cc->channel_id = !merge ? 3 : channel;
+
+	if (cb->sb_data_len) {
+		memcpy(cc->data, cb->sb_addr, cb->sb_data_len * count);
+		cc->sb_hp_data_len = cb->sb_data_len;
+		cc->sb_data_len = cb->sb_data_len;
+	}
+
+	if (cb->db_data_len) {
+		memcpy(cc->data + cb->sb_data_len * count,
+				cb->db_addr, cb->db_data_len * count);
+		cc->db_data_len = cb->db_data_len;
+	}
+
+	/* empty sb and db buffer */
+	cb->db_data_len = 0;
+	cb->sb_data_len = 0;
+
+	num[0] = num[1] = num[2] = 0;
+	spin_lock(&info->llock);
+	list_add_tail(&cc->list, &info->ctxld_list);
+
+	list_for_each(node, &info->ctxld_list) {
+		if (node == NULL) {
+			continue;
+		}
+		cm = list_entry(node, struct ctxld_commit, list);
+		if (cm->channel_id == 3) {
+			continue;
+		}
+		num[cm->channel_id]++;
+	}
+	spin_unlock(&info->llock);
+
+	queue_work(info->ctxld_wq, &info->work);
+
+	if (num[0] >=2 || num[1] >= 2 || num[2] >= 2) {
+		flush_workqueue(info->ctxld_wq);
+	}
+
+	return 0;
 }
 
 static int commit_to_fifo(uint32_t channel,
@@ -2624,7 +2815,7 @@ static int dcss_set_par(struct fb_info *fbi)
 		goto fail;
 
 #if USE_CTXLD
-	ret = commit_to_fifo(fb_node, info);
+	ret = commit_work(fb_node, info, 0);
 	if (ret) {
 		dev_err(&pdev->dev, "commit config failed\n");
 		goto out;
@@ -2698,7 +2889,7 @@ static int dcss_blank(int blank, struct fb_info *fbi)
 	dcss_channel_blank(blank, cinfo);
 
 #if USE_CTXLD
-	ret = commit_to_fifo(fb_node, info);
+	ret = commit_work(fb_node, info, 0);
 	if (ret) {
 		dev_err(&pdev->dev, "commit config failed\n");
 		goto out;
@@ -2750,16 +2941,11 @@ static int dcss_pan_display(struct fb_var_screeninfo *var,
 			chroma_addr + (offset >> 1));
 	}
 
-	ret = commit_to_fifo(fbi->node, info);
+	ret = commit_work(fbi->node, info, 1);
 	if (ret) {
 		dev_err(&pdev->dev, "commit config failed\n");
 		return ret;
 	}
-
-	/* TODO: blocking mode */
-	if (likely(!var->reserved[2]))
-		/* make pan display synchronously */
-		flush_workqueue(info->ctxld_wq);
 
 	return 0;
 }
@@ -2888,6 +3074,7 @@ static irqreturn_t dcss_irq_handler(int irq, void *dev_id)
 	struct dcss_channels *chans = &info->chans;
 	struct dcss_channel_info *chan;
 	struct ctxld_fifo *cfifo;
+	struct platform_device *pdev = info->pdev;
 
 	cfifo = &info->cfifo;
 	desc = irq_to_desc(irq);
@@ -3154,6 +3341,16 @@ static int dcss_info_init(struct dcss_info *info)
 		dev_err(&pdev->dev, "allocate ctxld wq failed\n");
 		ret = -EINVAL;
 		goto free_cfifo;
+	}
+
+	INIT_WORK(&info->work, dcss_ctxld_work);
+	info->size = DCSS_CFIFO_SIZE;
+	info->vaddr = dma_alloc_coherent(&pdev->dev, info->size,
+					  &info->dma_handle,
+					  GFP_DMA | GFP_KERNEL);
+	if (!info->vaddr) {
+		dev_err(&pdev->dev, "allocate ctxld buffer failed\n");
+		return -ENOMEM;
 	}
 
 	platform_set_drvdata(pdev, info);
