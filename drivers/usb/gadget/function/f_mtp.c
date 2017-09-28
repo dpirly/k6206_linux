@@ -843,7 +843,7 @@ static void receive_file_work(struct work_struct *data)
 			read_req = dev->rx_req[cur_buf];
 			cur_buf = (cur_buf + 1) % RX_REQ_MAX;
 
-			len = ALIGN(count, dev->ep_out->maxpacket);
+			len = usb_ep_align_maybe(cdev->gadget, dev->ep_out, count);
 			if (len > MTP_BULK_BUFFER_SIZE)
 				len = MTP_BULK_BUFFER_SIZE;
 			read_req->length = len;
