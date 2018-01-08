@@ -1451,9 +1451,13 @@ fec_enet_rx_queue(struct net_device *ndev, int budget, u16 queue_id)
 		writel(FEC_ENET_RXF, fep->hwp + FEC_IEVENT);
 
 		/* Check for errors. */
+		/* add by dpirly@gmail.com
+		 * remvoe "BD_ENET_RX_CR"
+		 * because k6206 always have this error! why?
+		 */
 		status ^= BD_ENET_RX_LAST;
 		if (status & (BD_ENET_RX_LG | BD_ENET_RX_SH | BD_ENET_RX_NO |
-			   BD_ENET_RX_CR | BD_ENET_RX_OV | BD_ENET_RX_LAST |
+			   /* BD_ENET_RX_CR | */ BD_ENET_RX_OV | BD_ENET_RX_LAST |
 			   BD_ENET_RX_CL)) {
 			ndev->stats.rx_errors++;
 			if (status & BD_ENET_RX_OV) {

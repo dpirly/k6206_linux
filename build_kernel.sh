@@ -13,3 +13,15 @@ unset LDFLAGS
 
 make imx_v7_defconfig
 make -j8 uImage LOADADDR=0x10008000
+
+echo ""
+echo "Compile device tree"
+make imx6ul-k6206.dtb
+
+echo "copy device tree"
+cp ./arch/arm/boot/dts/imx6ul-k6206.dtb ./
+
+echo "copy zImage"
+cp ./arch/arm/boot/zImage ./
+
+
