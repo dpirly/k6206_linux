@@ -1,5 +1,16 @@
 #include "imx6ul-14x14-evk.dts"
 
+/ {
+
+	sound {
+	      status = "disabled";
+	};
+
+	spi4 {
+	     status = "disabled";
+	};
+};
+
 &fec2 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_enet2>;
@@ -22,3 +33,77 @@
 		};
 	};
 };
+
+
+&ecspi1 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi1>;
+	status = "okay";
+
+	spidev0: spidev@0 {
+		spi-max-frequency = <100000>;
+		reg = <0 0>;
+                compatible = "rohm,dh2228fv";
+	};
+};
+
+&ecspi2 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi2>;
+	status = "okay";
+
+	spidev1: spidev@1 {
+		spi-max-frequency = <100000>;
+		reg = <0 1>;
+                compatible = "rohm,dh2228fv";
+	};
+};
+
+&ecspi3 {
+	fsl,spi-num-chipselects = <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi3>;
+	status = "okay";
+
+	spidev2: spidev@2 {
+		spi-max-frequency = <100000>;
+		reg = <0 2>;
+                compatible = "rohm,dh2228fv";
+	};
+};
+
+&ecspi4 {
+	status = "disabled";
+};
+
+&sim2 {
+	status = "disabled";
+};
+
+&sai2 {
+	status = "disabled";
+};
+
+&pxp {
+	status = "disabled";
+};
+
+&flexcan1 {
+	status = "disabled";
+};
+
+&flexcan2 {
+	status = "disabled";
+};
+
+&i2c1 {
+	status = "disabled";
+};
+
+&i2c2 {
+	status = "disabled";
+};
+
+
