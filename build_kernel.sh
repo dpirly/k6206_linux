@@ -18,10 +18,13 @@ make -j8 uImage LOADADDR=0x10008000
 
 echo ""
 echo "Compile device tree"
+rm imx6ul-k6206.dtb
 make imx6ul-k6206.dtb
 
 echo "copy device tree"
 cp ./arch/arm/boot/dts/imx6ul-k6206.dtb ./
+
+./scripts/dtc/dtc -I dtb -O dts imx6ul-k6206.dtb -o imx6ul-k6206.dts
 
 echo "copy zImage"
 cp ./arch/arm/boot/zImage ./

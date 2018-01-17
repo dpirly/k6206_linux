@@ -172,7 +172,7 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_enet1>;
 	phy-mode = "rmii";
-	phy-handle = <&ethphy0>;
+/*	phy-handle = <&ethphy0>; */
 	status = "okay";
 };
 
@@ -180,9 +180,9 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_enet2>;
 	phy-mode = "rmii";
-	phy-handle = <&ethphy1>;
+/*	phy-handle = <&ethphy1>; */
 	status = "okay";
-
+/*
 	mdio {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -197,6 +197,8 @@
 			reg = <1>;
 		};
 	};
+*/
+
 };
 
 &flexcan1 {
