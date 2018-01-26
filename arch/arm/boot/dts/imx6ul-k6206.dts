@@ -22,6 +22,8 @@
 	fixed-link {
 		speed = <100>;
 		full-duplex;
+		pause;
+		asym-pause;
 	};
 };
 
@@ -34,6 +36,8 @@
 	fixed-link {
 		speed = <100>;
 		full-duplex;
+		pause;
+		asym-pause;
 	};
 };
 
