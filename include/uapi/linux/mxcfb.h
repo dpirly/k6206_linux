@@ -183,6 +183,9 @@ struct mxcfb_csc_matrix {
 #define MXCFB_SET_PREFETCH	_IOW('F', 0x30, int)
 #define MXCFB_GET_PREFETCH	_IOR('F', 0x31, int)
 
+/* IOCTLs for mpu panel updates */
+#define MXCFB_MPU_REFRESH_PANEL		_IOW('F', 0x33, u_int32_t)
+
 /* IOCTLs for E-ink panel updates */
 #define MXCFB_SET_WAVEFORM_MODES	_IOW('F', 0x2B, struct mxcfb_waveform_modes)
 #define MXCFB_SET_TEMPERATURE		_IOW('F', 0x2C, int32_t)

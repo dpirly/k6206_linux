@@ -67,6 +67,10 @@ config FB_MXS_SII902X
 	tristate "Si Image SII9022 DVI/HDMI Interface Chip"
 	depends on FB_MXS && I2C
 
+config  FB_MXS_ILI9225G_QCIF
+	tristate "ILI9225G QCIF MPU Display"
+	depends on FB_MXS
+
 config FB_MXC_DCIC
 	tristate "MXC DCIC"
 	depends on FB_MXC_SYNC_PANEL

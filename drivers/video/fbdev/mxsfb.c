@@ -43,6 +43,7 @@
 #include <linux/console.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/delay.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
@@ -60,170 +61,24 @@
 #include <linux/uaccess.h>
 
 #include "mxc/mxc_dispdrv.h"
+#include "mxsfb.h"
 
-#define REG_SET	4
-#define REG_CLR	8
-
-#define LCDC_CTRL			0x00
-#define LCDC_CTRL1			0x10
-#define LCDC_V4_CTRL2			0x20
-#define LCDC_V3_TRANSFER_COUNT		0x20
-#define LCDC_V4_TRANSFER_COUNT		0x30
-#define LCDC_V4_CUR_BUF			0x40
-#define LCDC_V4_NEXT_BUF		0x50
-#define LCDC_V3_CUR_BUF			0x30
-#define LCDC_V3_NEXT_BUF		0x40
-#define LCDC_TIMING			0x60
-#define LCDC_VDCTRL0			0x70
-#define LCDC_VDCTRL1			0x80
-#define LCDC_VDCTRL2			0x90
-#define LCDC_VDCTRL3			0xa0
-#define LCDC_VDCTRL4			0xb0
-#define LCDC_DVICTRL0			0xc0
-#define LCDC_DVICTRL1			0xd0
-#define LCDC_DVICTRL2			0xe0
-#define LCDC_DVICTRL3			0xf0
-#define LCDC_DVICTRL4			0x100
-#define LCDC_V4_DATA			0x180
-#define LCDC_V3_DATA			0x1b0
-#define LCDC_V4_DEBUG0			0x1d0
-#define LCDC_V3_DEBUG0			0x1f0
-
-#define CTRL_SFTRST			(1 << 31)
-#define CTRL_CLKGATE			(1 << 30)
-#define CTRL_BYPASS_COUNT		(1 << 19)
-#define CTRL_VSYNC_MODE			(1 << 18)
-#define CTRL_DOTCLK_MODE		(1 << 17)
-#define CTRL_DATA_SELECT		(1 << 16)
-#define CTRL_SET_BUS_WIDTH(x)		(((x) & 0x3) << 10)
-#define CTRL_GET_BUS_WIDTH(x)		(((x) >> 10) & 0x3)
-#define CTRL_SET_WORD_LENGTH(x)		(((x) & 0x3) << 8)
-#define CTRL_GET_WORD_LENGTH(x)		(((x) >> 8) & 0x3)
-#define CTRL_MASTER			(1 << 5)
-#define CTRL_DF16			(1 << 3)
-#define CTRL_DF18			(1 << 2)
-#define CTRL_DF24			(1 << 1)
-#define CTRL_RUN			(1 << 0)
-
-#define CTRL1_RECOVERY_ON_UNDERFLOW		(1 << 24)
-#define CTRL1_FIFO_CLEAR				(1 << 21)
-#define CTRL1_SET_BYTE_PACKAGING(x)		(((x) & 0xf) << 16)
-#define CTRL1_GET_BYTE_PACKAGING(x)		(((x) >> 16) & 0xf)
-#define CTRL1_OVERFLOW_IRQ_EN			(1 << 15)
-#define CTRL1_UNDERFLOW_IRQ_EN			(1 << 14)
-#define CTRL1_CUR_FRAME_DONE_IRQ_EN		(1 << 13)
-#define CTRL1_VSYNC_EDGE_IRQ_EN			(1 << 12)
-#define CTRL1_OVERFLOW_IRQ				(1 << 11)
-#define CTRL1_UNDERFLOW_IRQ				(1 << 10)
-#define CTRL1_CUR_FRAME_DONE_IRQ		(1 << 9)
-#define CTRL1_VSYNC_EDGE_IRQ			(1 << 8)
-#define CTRL1_IRQ_ENABLE_MASK			(CTRL1_OVERFLOW_IRQ_EN | \
-						 CTRL1_UNDERFLOW_IRQ_EN | \
-						 CTRL1_CUR_FRAME_DONE_IRQ_EN | \
-						 CTRL1_VSYNC_EDGE_IRQ_EN)
-#define CTRL1_IRQ_ENABLE_SHIFT			12
-#define CTRL1_IRQ_STATUS_MASK			(CTRL1_OVERFLOW_IRQ | \
-						 CTRL1_UNDERFLOW_IRQ | \
-						 CTRL1_CUR_FRAME_DONE_IRQ | \
-						 CTRL1_VSYNC_EDGE_IRQ)
-#define CTRL1_IRQ_STATUS_SHIFT			8
-
-#define CTRL2_OUTSTANDING_REQS__REQ_16		(3 << 21)
-
-#define TRANSFER_COUNT_SET_VCOUNT(x)	(((x) & 0xffff) << 16)
-#define TRANSFER_COUNT_GET_VCOUNT(x)	(((x) >> 16) & 0xffff)
-#define TRANSFER_COUNT_SET_HCOUNT(x)	((x) & 0xffff)
-#define TRANSFER_COUNT_GET_HCOUNT(x)	((x) & 0xffff)
-
-
-#define VDCTRL0_ENABLE_PRESENT		(1 << 28)
-#define VDCTRL0_VSYNC_ACT_HIGH		(1 << 27)
-#define VDCTRL0_HSYNC_ACT_HIGH		(1 << 26)
-#define VDCTRL0_DOTCLK_ACT_FALLING	(1 << 25)
-#define VDCTRL0_ENABLE_ACT_HIGH		(1 << 24)
-#define VDCTRL0_VSYNC_PERIOD_UNIT	(1 << 21)
-#define VDCTRL0_VSYNC_PULSE_WIDTH_UNIT	(1 << 20)
-#define VDCTRL0_HALF_LINE		(1 << 19)
-#define VDCTRL0_HALF_LINE_MODE		(1 << 18)
-#define VDCTRL0_SET_VSYNC_PULSE_WIDTH(x) ((x) & 0x3ffff)
-#define VDCTRL0_GET_VSYNC_PULSE_WIDTH(x) ((x) & 0x3ffff)
-
-#define VDCTRL2_SET_HSYNC_PERIOD(x)	((x) & 0x3ffff)
-#define VDCTRL2_GET_HSYNC_PERIOD(x)	((x) & 0x3ffff)
-
-#define VDCTRL3_MUX_SYNC_SIGNALS	(1 << 29)
-#define VDCTRL3_VSYNC_ONLY		(1 << 28)
-#define SET_HOR_WAIT_CNT(x)		(((x) & 0xfff) << 16)
-#define GET_HOR_WAIT_CNT(x)		(((x) >> 16) & 0xfff)
-#define SET_VERT_WAIT_CNT(x)		((x) & 0xffff)
-#define GET_VERT_WAIT_CNT(x)		((x) & 0xffff)
-
-#define VDCTRL4_SET_DOTCLK_DLY(x)	(((x) & 0x7) << 29) /* v4 only */
-#define VDCTRL4_GET_DOTCLK_DLY(x)	(((x) >> 29) & 0x7) /* v4 only */
-#define VDCTRL4_SYNC_SIGNALS_ON		(1 << 18)
-#define SET_DOTCLK_H_VALID_DATA_CNT(x)	((x) & 0x3ffff)
-
-#define DEBUG0_HSYNC			(1 < 26)
-#define DEBUG0_VSYNC			(1 < 25)
-
-#define MIN_XRES			120
-#define MIN_YRES			120
-
-#define RED 0
-#define GREEN 1
-#define BLUE 2
-#define TRANSP 3
-
-#define STMLCDIF_8BIT  1 /** pixel data bus to the display is of 8 bit width */
-#define STMLCDIF_16BIT 0 /** pixel data bus to the display is of 16 bit width */
-#define STMLCDIF_18BIT 2 /** pixel data bus to the display is of 18 bit width */
-#define STMLCDIF_24BIT 3 /** pixel data bus to the display is of 24 bit width */
-
-#define FB_SYNC_OE_LOW_ACT		0x80000000
-#define FB_SYNC_CLK_LAT_FALL	0x40000000
-
-enum mxsfb_devtype {
-	MXSFB_V3,
-	MXSFB_V4,
-};
-
-/* CPU dependent register offsets */
-struct mxsfb_devdata {
-	unsigned transfer_count;
-	unsigned cur_buf;
-	unsigned next_buf;
-	unsigned debug0;
-	unsigned hs_wdth_mask;
-	unsigned hs_wdth_shift;
-	unsigned ipversion;
-};
-
-struct mxsfb_info {
-	struct fb_info *fb_info;
-	struct platform_device *pdev;
-	struct clk *clk_pix;
-	struct clk *clk_axi;
-	struct clk *clk_disp_axi;
-	bool clk_pix_enabled;
-	bool clk_axi_enabled;
-	bool clk_disp_axi_enabled;
-	void __iomem *base;	/* registers */
-	u32 sync;		/* record display timing polarities */
-	unsigned allocated_size;
-	int enabled;
-	unsigned ld_intf_width;
-	unsigned dotclk_delay;
-	const struct mxsfb_devdata *devdata;
-	struct regulator *reg_lcd;
-	bool wait4vsync;
-	struct completion vsync_complete;
-	struct completion flip_complete;
-	int cur_blank;
-	int restore_blank;
-	char disp_dev[32];
-	struct mxc_dispdrv_handle *dispdrv;
-	int id;
-	struct fb_var_screeninfo var;
+static struct mpu_match_lcd mpu_lcd_db[] = {
+#ifdef CONFIG_FB_MXS_ST7789S_QVGA
+	{
+	"ST7789S-QVGA",
+	{mpu_st7789s_get_lcd_videomode, mpu_st7789s_lcd_setup, mpu_st7789s_lcd_poweroff}
+	},
+#endif
+#ifdef CONFIG_FB_MXS_ILI9225G_QCIF
+	{
+	"ILI9225G-QCIF",
+	{mpu_ili9225g_get_lcd_videomode, mpu_ili9225g_lcd_setup, mpu_ili9225g_lcd_poweroff}
+	},
+#endif
+	{
+	"", {NULL, NULL}
+	}
 };
 
 #define mxsfb_is_v3(host) (host->devdata->ipversion == 3)
@@ -232,6 +87,7 @@ struct mxsfb_info {
 static const struct mxsfb_devdata mxsfb_devdata[] = {
 	[MXSFB_V3] = {
 		.transfer_count = LCDC_V3_TRANSFER_COUNT,
+		.data = LCDC_V3_DATA,
 		.cur_buf = LCDC_V3_CUR_BUF,
 		.next_buf = LCDC_V3_NEXT_BUF,
 		.debug0 = LCDC_V3_DEBUG0,
@@ -241,6 +97,7 @@ static const struct mxsfb_devdata mxsfb_devdata[] = {
 	},
 	[MXSFB_V4] = {
 		.transfer_count = LCDC_V4_TRANSFER_COUNT,
+		.data = LCDC_V4_DATA,
 		.cur_buf = LCDC_V4_CUR_BUF,
 		.next_buf = LCDC_V4_NEXT_BUF,
 		.debug0 = LCDC_V4_DEBUG0,
@@ -249,6 +106,8 @@ static const struct mxsfb_devdata mxsfb_devdata[] = {
 		.ipversion = 4,
 	},
 };
+
+#define to_imxfb_host(x) (container_of(x, struct mxsfb_info, fb_info))
 
 static int mxsfb_map_videomem(struct fb_info *info);
 static int mxsfb_unmap_videomem(struct fb_info *info);
@@ -395,6 +254,331 @@ static inline unsigned chan_to_field(unsigned chan, struct fb_bitfield *bf)
 	return chan << bf->offset;
 }
 
+static int mxsfb_mpu_wait_for_ready(struct mxsfb_info *host)
+{
+	unsigned int val;
+	int timeout = 0;
+
+	// Check for running
+	val = readl(host->base + LCDC_CTRL);
+	while(val & CTRL_RUN) {
+		mdelay(1);
+		timeout ++;
+		if (timeout >= 1000) {
+			dev_err(&host->pdev->dev, "mxsfb_mpu_wait_for_ready timeout!\n");
+			return -ETIME;
+		}
+		val = readl(host->base + LCDC_CTRL);
+	}
+
+	// Check for running
+	return 0;
+}
+unsigned int mxsfb_mpu_access(struct mxsfb_info *host, int mode, int rw, int data)
+{
+	unsigned int val, wordlen, ret = 0;
+
+	if (mxsfb_mpu_wait_for_ready(host) != 0)
+		return 0;
+
+	writel(CTRL_MASTER,
+			 host->base + LCDC_CTRL + REG_CLR);
+
+	writel(CTRL1_BYTE_PACKING_FORMAT_MASK,
+			 host->base + LCDC_CTRL1 + REG_CLR);
+
+	val = readl(host->base + LCDC_CTRL);
+	wordlen = CTRL_GET_WORD_LENGTH(val);
+	writel(CTRL_WORD_LENGTH_MASK,
+			 host->base + LCDC_CTRL + REG_CLR);
+
+	writel(CTRL_YCBCR422_INPUT |
+			 CTRL_INPUT_DATA_SWIZZLE_MASK,
+			 host->base + LCDC_CTRL + REG_CLR);
+
+	switch (host->mpu_lcd_sigs->interface_width)
+	{
+		case 8:
+			writel((0x1 << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+					 host->base + LCDC_CTRL1 + REG_SET);
+			writel(CTRL_WORD_LENGTH_8BIT,
+					 host->base + LCDC_CTRL + REG_SET);
+			break;
+		case 16:
+			writel((0x3 << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+					 host->base + LCDC_CTRL1 + REG_SET);
+			writel(CTRL_WORD_LENGTH_16BIT,
+					 host->base + LCDC_CTRL + REG_SET);
+			break;
+	}
+
+	val = readl(host->base + host->devdata->transfer_count);
+	val &= ~(TRANSFER_COUNT_H_COUNT_MASK |
+		 TRANSFER_COUNT_V_COUNT_MASK);
+	val |= (1 << TRANSFER_COUNT_V_COUNT_OFFSET) |
+		   (1 << TRANSFER_COUNT_H_COUNT_OFFSET);
+	writel(val, host->base + host->devdata->transfer_count);
+
+	if(mode == MPU_CMD)
+	{
+		if (host->mpu_lcd_sigs->lcd_rs_is_gpio)
+			gpio_set_value(host->mpu_lcd_sigs->lcd_rs_gpio, 0);
+		writel(CTRL_DATA_SELECT,
+				 host->base + LCDC_CTRL + REG_CLR);
+	}
+	else
+	{
+		if (host->mpu_lcd_sigs->lcd_rs_is_gpio)
+			gpio_set_value(host->mpu_lcd_sigs->lcd_rs_gpio, 1);
+		writel(CTRL_DATA_SELECT,
+				 host->base + LCDC_CTRL + REG_SET);
+	}
+
+	if(rw == MPU_READ)
+	{
+		writel(CTRL2_READ_MODE_NUM_PACKED_SUBWORDS_MASK,
+				host->base + LCDC_V4_CTRL2 + REG_CLR);
+		writel((0x1 << CTRL2_READ_MODE_NUM_PACKED_SUBWORDS_OFFSET),
+				 host->base + LCDC_V4_CTRL2 + REG_SET);
+
+		writel(CTRL_READ_WRITEB,
+				 host->base + LCDC_CTRL + REG_SET);
+		writel(CTRL_RUN,
+				 host->base + LCDC_CTRL + REG_SET);
+	}
+	else
+	{
+		writel(CTRL_READ_WRITEB,
+				 host->base + LCDC_CTRL + REG_CLR);
+		writel(CTRL_RUN,
+				 host->base + LCDC_CTRL + REG_SET);
+
+		writel(data,
+			     host->base + host->devdata->data);
+	}
+
+	val = readl(host->base + LCDC_CTRL);
+	while(val & CTRL_RUN)
+	{
+		if(rw == MPU_READ)
+			ret = readl(host->base + host->devdata->data);
+
+		val = readl(host->base + LCDC_CTRL);
+	}
+
+	writel(CTRL_MASTER,
+			 host->base + LCDC_CTRL + REG_SET);
+
+	writel(CTRL_WORD_LENGTH_MASK,
+			 host->base + LCDC_CTRL + REG_CLR);
+	writel((wordlen << CTRL_WORD_LENGTH_OFFSET),
+			 host->base + LCDC_CTRL + REG_SET);  // 32 bits valid data
+	writel(CTRL1_BYTE_PACKING_FORMAT_MASK,
+			 host->base + LCDC_CTRL1 + REG_CLR);
+	writel((0xF << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+			 host->base + LCDC_CTRL1 + REG_SET);  // 32 bits valid data
+
+	writel(CTRL_MASTER,
+			 host->base + LCDC_CTRL + REG_SET);
+
+	// For idle, set LCD_RS to high
+	if (host->mpu_lcd_sigs->lcd_rs_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_rs_gpio, 1);
+
+
+	return ret;
+}
+EXPORT_SYMBOL(mxsfb_mpu_access);
+
+int mxsfb_mpu_refresh_panel(struct mxsfb_info *host)
+{
+	if (mxsfb_mpu_wait_for_ready(host) != 0)
+	{
+		return -ETIME;
+	}
+
+	writel(CTRL_MASTER,
+			 host->base + LCDC_CTRL + REG_SET);
+	writel(CTRL_RUN,
+			 host->base + LCDC_CTRL + REG_SET);
+	return 0;
+}
+
+void mxsfb_mpu_setup_refresh_data(struct mxsfb_info *host)
+{
+	unsigned int val;
+
+	if (mxsfb_mpu_wait_for_ready(host) != 0)
+		return;
+
+	val = readl(host->base + host->devdata->transfer_count);
+	val &= ~(TRANSFER_COUNT_H_COUNT_MASK |
+		 TRANSFER_COUNT_V_COUNT_MASK);
+	val |= (host->var.xres << TRANSFER_COUNT_H_COUNT_OFFSET) |
+		   (host->var.yres << TRANSFER_COUNT_V_COUNT_OFFSET);
+	writel(val, host->base + host->devdata->transfer_count);
+
+	writel(CTRL_READ_WRITEB,
+			 host->base + LCDC_CTRL + REG_CLR);
+	writel(CTRL_BYPASS_COUNT,
+			 host->base + LCDC_CTRL + REG_CLR);
+	writel(CTRL_DATA_SELECT,
+			 host->base + LCDC_CTRL + REG_SET);
+	if (host->mpu_lcd_sigs->lcd_rs_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_rs_gpio, 1);
+
+	if (host->mpu_lcd_sigs->panel_bpp == 16) {
+		writel(CTRL_YCBCR422_INPUT |
+				(1 << CTRL_INPUT_DATA_SWIZZLE_OFFSET),
+				host->base + LCDC_CTRL + REG_SET);
+	}
+}
+
+static void mxsfb_mpu_setup_interface(struct mxsfb_info *host)
+{
+	writel(CTRL_RUN, host->base + LCDC_CTRL + REG_CLR);
+	writel(CTRL_MASTER, host->base + LCDC_CTRL + REG_CLR);
+
+	/* Setup the bus protocol */
+	if (host->mpu_lcd_sigs->bus_mode == MPU_BUS_8080)
+		writel(CTRL1_MODE86,
+			     host->base + LCDC_CTRL1 + REG_CLR);
+	else
+		writel(CTRL1_MODE86,
+			     host->base + LCDC_CTRL1 + REG_SET);
+
+	writel(CTRL1_BUSY_ENABLE,
+		     host->base + LCDC_CTRL1 + REG_CLR);
+
+	/* Take display out of reset */
+	writel(CTRL1_RESET,
+		     host->base + LCDC_CTRL1 + REG_SET);
+	if (host->mpu_lcd_sigs->lcd_reset_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_reset_gpio, 1);
+
+	/* VSYNC is an input by default */
+	writel(VDCTRL0_VSYNC_OEB,
+		    host->base + LCDC_VDCTRL0 + REG_SET);
+
+	/*
+	 * Make sure we do a high-to-low transition to reset the panel.
+	 * First make it low for 100 msec, hi for 10 msec, low for 10 msec,
+	 * then hi.
+	 */
+	writel(CTRL1_RESET,
+		     host->base + LCDC_CTRL1 + REG_CLR);	/* low */
+	if (host->mpu_lcd_sigs->lcd_reset_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_reset_gpio, 0);
+
+	msleep(100);
+
+	writel(CTRL1_RESET,
+		     host->base + LCDC_CTRL1 + REG_SET);	/* high */
+	if (host->mpu_lcd_sigs->lcd_reset_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_reset_gpio, 1);
+
+	msleep(10);
+
+	writel(CTRL1_RESET,
+		     host->base + LCDC_CTRL1 + REG_CLR);	/* low */
+	if (host->mpu_lcd_sigs->lcd_reset_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_reset_gpio, 0);
+
+	/* For some panel, Reset must be held low at least 30 uSec
+	 * Therefore, we'll hold it low for about 10 mSec just to be sure.
+	 * Then we'll wait 1 mSec afterwards.
+	 */
+	msleep(10);
+	writel(CTRL1_RESET,
+		     host->base + LCDC_CTRL1 + REG_SET);	/* high */
+	if (host->mpu_lcd_sigs->lcd_reset_is_gpio)
+		gpio_set_value(host->mpu_lcd_sigs->lcd_reset_gpio, 1);
+	msleep(1);
+
+	writel(CTRL_DATA_SHIFT_DIR,
+		     host->base + LCDC_CTRL + REG_CLR);
+
+	writel(CTRL_SHIFT_NUM_BITS_MASK,
+		     host->base + LCDC_CTRL + REG_CLR);
+
+	writel(CTRL2_OUTSTANDING_REQS_MASK,
+		    host->base + LCDC_V4_CTRL2 + REG_CLR);
+	writel(CTRL2_OUTSTANDING_REQS_REQ_8 ,
+		     host->base + LCDC_V4_CTRL2 + REG_SET);
+
+	/* Recover on underflow */
+	writel(CTRL1_RECOVERY_ON_UNDERFLOW,
+	     host->base + LCDC_CTRL1 + REG_SET);
+
+	/* Configure the input pixel format */
+	writel(CTRL_YCBCR422_INPUT |
+		     CTRL_WORD_LENGTH_MASK |
+		     CTRL_INPUT_DATA_SWIZZLE_MASK |
+			 CTRL_DATA_FORMAT_16_BIT |
+		     CTRL_DATA_FORMAT_18_BIT |
+		     CTRL_DATA_FORMAT_24_BIT,
+		     host->base + LCDC_CTRL + REG_CLR);
+	writel(CTRL1_BYTE_PACKING_FORMAT_MASK,
+		     host->base + LCDC_CTRL1 + REG_CLR);
+
+	switch (host->mpu_lcd_sigs->panel_bpp) {
+	case 16:
+		writel((0xF << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+			     host->base + LCDC_CTRL1 + REG_SET);
+
+		writel(CTRL_WORD_LENGTH_16BIT |
+			     (0 << CTRL_INPUT_DATA_SWIZZLE_OFFSET) |(0x2 << CTRL_CSC_DATA_SWIZZLE_OFFSET),
+			     host->base + LCDC_CTRL + REG_SET);
+
+		break;
+	case 18:
+		writel((0xF << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+				 host->base + LCDC_CTRL1 + REG_SET);
+		writel(CTRL_WORD_LENGTH_18BIT |
+				 (0 << CTRL_INPUT_DATA_SWIZZLE_OFFSET),
+				 host->base + LCDC_CTRL + REG_SET);
+		break;
+	case 24:
+	default:
+		writel((0xF << CTRL1_BYTE_PACKING_FORMAT_OFFSET),
+			     host->base + LCDC_CTRL1 + REG_SET);
+		writel(CTRL_WORD_LENGTH_24BIT|
+			     (0 << CTRL_INPUT_DATA_SWIZZLE_OFFSET),
+			     host->base + LCDC_CTRL + REG_SET);
+		break;
+	}
+
+	/* Configure the output bus width */
+	writel(CTRL_LCD_DATABUS_WIDTH_MASK,
+		     host->base + LCDC_CTRL + REG_CLR);
+	switch (host->mpu_lcd_sigs->interface_width) {
+	case 8:
+		writel(CTRL_LCD_DATABUS_WIDTH_8BIT,
+				 host->base + LCDC_CTRL + REG_SET);
+		break;
+	case 16:
+		writel(CTRL_LCD_DATABUS_WIDTH_16BIT,
+			     host->base + LCDC_CTRL + REG_SET);
+		break;
+	case 18:
+		writel(CTRL_LCD_DATABUS_WIDTH_18BIT,
+			     host->base + LCDC_CTRL + REG_SET);
+		break;
+	case 24:
+	default:
+		writel(CTRL_LCD_DATABUS_WIDTH_24BIT,
+			     host->base + LCDC_CTRL + REG_SET);
+		break;
+	}
+
+	/* Configure the MPU timing */
+	writel((5 << TIMING_CMD_HOLD_OFFSET) | (5 << TIMING_CMD_SETUP_OFFSET) |
+			 (5 << TIMING_DATA_HOLD_OFFSET) | (5 << TIMING_DATA_SETUP_OFFSET),
+			 host->base + LCDC_TIMING);
+
+	msleep(10);
+}
+
 static irqreturn_t mxsfb_irq_handler(int irq, void *dev_id)
 {
 	struct mxsfb_info *host = dev_id;
@@ -434,7 +618,7 @@ static irqreturn_t mxsfb_irq_handler(int irq, void *dev_id)
 static int mxsfb_check_var(struct fb_var_screeninfo *var,
 		struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	const struct fb_bitfield *rgb = NULL;
 
 	if (var->xres < MIN_XRES)
@@ -461,10 +645,15 @@ static int mxsfb_check_var(struct fb_var_screeninfo *var,
 		rgb = def_rgb565;
 		break;
 	case 32:
+		if (host->is_mpu_lcd) {
+			rgb = def_rgb888;
+			break;
+		}
+
 		switch (host->ld_intf_width) {
 		case STMLCDIF_8BIT:
 			pr_debug("Unsupported LCD bus width mapping\n");
-			return -EINVAL;
+			break;
 		case STMLCDIF_16BIT:
 			/* 24 bit to 18 bit mapping */
 			rgb = def_rgb666;
@@ -501,7 +690,7 @@ static int mxsfb_check_var(struct fb_var_screeninfo *var,
 
 static void mxsfb_enable_controller(struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	u32 reg;
 	int ret;
 
@@ -547,22 +736,24 @@ static void mxsfb_enable_controller(struct fb_info *fb_info)
 	}
 	clk_enable_pix(host);
 
-	writel(CTRL2_OUTSTANDING_REQS__REQ_16,
-		host->base + LCDC_V4_CTRL2 + REG_SET);
+	if (!host->is_mpu_lcd) {
+		writel(CTRL2_OUTSTANDING_REQS_REQ_16,
+			host->base + LCDC_V4_CTRL2 + REG_SET);
 
-	/* if it was disabled, re-enable the mode again */
-	writel(CTRL_DOTCLK_MODE, host->base + LCDC_CTRL + REG_SET);
+		/* if it was disabled, re-enable the mode again */
+		writel(CTRL_DOTCLK_MODE, host->base + LCDC_CTRL + REG_SET);
 
-	/* enable the SYNC signals first, then the DMA engine */
-	reg = readl(host->base + LCDC_VDCTRL4);
-	reg |= VDCTRL4_SYNC_SIGNALS_ON;
-	writel(reg, host->base + LCDC_VDCTRL4);
+		/* enable the SYNC signals first, then the DMA engine */
+		reg = readl(host->base + LCDC_VDCTRL4);
+		reg |= VDCTRL4_SYNC_SIGNALS_ON;
+		writel(reg, host->base + LCDC_VDCTRL4);
 
-	writel(CTRL_MASTER, host->base + LCDC_CTRL + REG_SET);
-	writel(CTRL_RUN, host->base + LCDC_CTRL + REG_SET);
+		writel(CTRL_MASTER, host->base + LCDC_CTRL + REG_SET);
+		writel(CTRL_RUN, host->base + LCDC_CTRL + REG_SET);
 
-	/* Recovery on underflow */
-	writel(CTRL1_RECOVERY_ON_UNDERFLOW, host->base + LCDC_CTRL1 + REG_SET);
+		/* Recovery on underflow */
+		writel(CTRL1_RECOVERY_ON_UNDERFLOW, host->base + LCDC_CTRL1 + REG_SET);
+	}
 
 	host->enabled = 1;
 
@@ -572,11 +763,12 @@ static void mxsfb_enable_controller(struct fb_info *fb_info)
 			dev_err(&host->pdev->dev, "failed to enable "
 				"dispdrv:%s\n", host->dispdrv->drv->name);
 	}
+
 }
 
 static void mxsfb_disable_controller(struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	unsigned loop;
 	u32 reg;
 	int ret;
@@ -613,6 +805,7 @@ static void mxsfb_disable_controller(struct fb_info *fb_info)
 			dev_err(&host->pdev->dev,
 				"lcd regulator disable failed: %d\n", ret);
 	}
+
 }
 
 /**
@@ -639,7 +832,7 @@ static bool mxsfb_par_equal(struct fb_info *fbi, struct mxsfb_info *host)
 
 static int mxsfb_set_par(struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	u32 ctrl, vdctrl0, vdctrl4;
 	int line_size, fb_size;
 	int reenable = 0;
@@ -675,107 +868,122 @@ static int mxsfb_set_par(struct fb_info *fb_info)
 	 * This may lead into shifted pictures (FIFO issue?).
 	 * So, first stop the controller and drain its FIFOs
 	 */
-	if (host->enabled) {
+	if (host->enabled && (!host->is_mpu_lcd)) {
 		reenable = 1;
 		mxsfb_disable_controller(fb_info);
 	}
 
-	/* clear the FIFOs */
-	writel(CTRL1_FIFO_CLEAR, host->base + LCDC_CTRL1 + REG_SET);
+	if (host->is_mpu_lcd) {
+		if (host->enabled) {
+			mxsfb_mpu_setup_interface(host);
+			writel(fb_info->fix.smem_start +
+					fb_info->fix.line_length * fb_info->var.yoffset,
+					host->base + host->devdata->cur_buf);
+			writel(fb_info->fix.smem_start +
+					fb_info->fix.line_length * fb_info->var.yoffset,
+					host->base + host->devdata->next_buf);
+			host->mpu_lcd_functions->mpu_lcd_setup(host);
+			mxsfb_mpu_setup_refresh_data(host);
+			mxsfb_mpu_refresh_panel(host);
+		}
+	} else {
+		/* clear the FIFOs */
+		writel(CTRL1_FIFO_CLEAR, host->base + LCDC_CTRL1 + REG_SET);
 
-	ctrl = CTRL_BYPASS_COUNT | CTRL_MASTER |
-		CTRL_SET_BUS_WIDTH(host->ld_intf_width);
+		ctrl = CTRL_BYPASS_COUNT | CTRL_MASTER |
+			CTRL_SET_BUS_WIDTH(host->ld_intf_width);
 
-	switch (fb_info->var.bits_per_pixel) {
-	case 16:
-		dev_dbg(&host->pdev->dev, "Setting up RGB565 mode\n");
-		ctrl |= CTRL_SET_WORD_LENGTH(0);
-		writel(CTRL1_SET_BYTE_PACKAGING(0xf), host->base + LCDC_CTRL1);
-		break;
-	case 32:
-		dev_dbg(&host->pdev->dev, "Setting up RGB888/666 mode\n");
-		ctrl |= CTRL_SET_WORD_LENGTH(3);
-		switch (host->ld_intf_width) {
-		case STMLCDIF_8BIT:
-			dev_dbg(&host->pdev->dev,
-					"Unsupported LCD bus width mapping\n");
-			return -EINVAL;
-		case STMLCDIF_16BIT:
-			/* 24 bit to 18 bit mapping */
-			ctrl |= CTRL_DF24; /* ignore the upper 2 bits in
-					    *  each colour component
-					    */
+		switch (fb_info->var.bits_per_pixel) {
+		case 16:
+			dev_dbg(&host->pdev->dev, "Setting up RGB565 mode\n");
+			ctrl |= CTRL_SET_WORD_LENGTH(0);
+			writel(CTRL1_SET_BYTE_PACKAGING(0xf), host->base + LCDC_CTRL1);
 			break;
-		case STMLCDIF_18BIT:
-			if (pixfmt_is_equal(&fb_info->var, def_rgb666))
+		case 32:
+			dev_dbg(&host->pdev->dev, "Setting up RGB888/666 mode\n");
+			ctrl |= CTRL_SET_WORD_LENGTH(3);
+			switch (host->ld_intf_width) {
+			case STMLCDIF_8BIT:
+				dev_dbg(&host->pdev->dev,
+						"Unsupported LCD bus width mapping\n");
+				return -EINVAL;
+			case STMLCDIF_16BIT:
 				/* 24 bit to 18 bit mapping */
-				ctrl |= CTRL_DF24; /* ignore the upper 2 bits in
+				ctrl |= CTRL_DATA_FORMAT_24_BIT; /* ignore the upper 2 bits in
 						    *  each colour component
 						    */
+				break;
+			case STMLCDIF_18BIT:
+				if (pixfmt_is_equal(&fb_info->var, def_rgb666))
+					/* 24 bit to 18 bit mapping */
+					ctrl |= CTRL_DATA_FORMAT_24_BIT; /* ignore the upper 2 bits in
+							    *  each colour component
+							    */
+				break;
+			case STMLCDIF_24BIT:
+				/* real 24 bit */
+				break;
+			}
+			/* do not use packed pixels = one pixel per word instead */
+			writel(CTRL1_SET_BYTE_PACKAGING(0x7), host->base + LCDC_CTRL1);
 			break;
-		case STMLCDIF_24BIT:
-			/* real 24 bit */
-			break;
+		default:
+			dev_dbg(&host->pdev->dev, "Unhandled color depth of %u\n",
+					fb_info->var.bits_per_pixel);
+			return -EINVAL;
 		}
-		/* do not use packed pixels = one pixel per word instead */
-		writel(CTRL1_SET_BYTE_PACKAGING(0x7), host->base + LCDC_CTRL1);
-		break;
-	default:
-		dev_dbg(&host->pdev->dev, "Unhandled color depth of %u\n",
-				fb_info->var.bits_per_pixel);
-		return -EINVAL;
+
+		writel(ctrl, host->base + LCDC_CTRL);
+
+		writel(TRANSFER_COUNT_SET_VCOUNT(fb_info->var.yres) |
+				TRANSFER_COUNT_SET_HCOUNT(fb_info->var.xres),
+				host->base + host->devdata->transfer_count);
+
+		vdctrl0 = VDCTRL0_ENABLE_PRESENT |	/* always in DOTCLOCK mode */
+			VDCTRL0_VSYNC_PERIOD_UNIT |
+			VDCTRL0_VSYNC_PULSE_WIDTH_UNIT |
+			VDCTRL0_SET_VSYNC_PULSE_WIDTH(fb_info->var.vsync_len);
+		/* use the saved sync to avoid wrong sync information */
+		if (host->sync & FB_SYNC_HOR_HIGH_ACT)
+			vdctrl0 |= VDCTRL0_HSYNC_ACT_HIGH;
+		if (host->sync & FB_SYNC_VERT_HIGH_ACT)
+			vdctrl0 |= VDCTRL0_VSYNC_ACT_HIGH;
+		if (!(host->sync & FB_SYNC_OE_LOW_ACT))
+			vdctrl0 |= VDCTRL0_ENABLE_ACT_HIGH;
+		if (host->sync & FB_SYNC_CLK_LAT_FALL)
+			vdctrl0 |= VDCTRL0_DOTCLK_ACT_FALLING;
+
+		writel(vdctrl0, host->base + LCDC_VDCTRL0);
+
+		/* frame length in lines */
+		writel(fb_info->var.upper_margin + fb_info->var.vsync_len +
+			fb_info->var.lower_margin + fb_info->var.yres,
+			host->base + LCDC_VDCTRL1);
+
+		/* line length in units of clocks or pixels */
+		writel(set_hsync_pulse_width(host, fb_info->var.hsync_len) |
+			VDCTRL2_SET_HSYNC_PERIOD(fb_info->var.left_margin +
+			fb_info->var.hsync_len + fb_info->var.right_margin +
+			fb_info->var.xres),
+			host->base + LCDC_VDCTRL2);
+
+		writel(SET_HOR_WAIT_CNT(fb_info->var.left_margin +
+			fb_info->var.hsync_len) |
+			SET_VERT_WAIT_CNT(fb_info->var.upper_margin +
+				fb_info->var.vsync_len),
+			host->base + LCDC_VDCTRL3);
+
+		vdctrl4 = SET_DOTCLK_H_VALID_DATA_CNT(fb_info->var.xres);
+		if (mxsfb_is_v4(host))
+			vdctrl4 |= VDCTRL4_SET_DOTCLK_DLY(host->dotclk_delay);
+		writel(vdctrl4, host->base + LCDC_VDCTRL4);
+
+		writel(fb_info->fix.smem_start +
+				fb_info->fix.line_length * fb_info->var.yoffset,
+				host->base + host->devdata->next_buf);
 	}
 
-	writel(ctrl, host->base + LCDC_CTRL);
-
-	writel(TRANSFER_COUNT_SET_VCOUNT(fb_info->var.yres) |
-			TRANSFER_COUNT_SET_HCOUNT(fb_info->var.xres),
-			host->base + host->devdata->transfer_count);
-
-	vdctrl0 = VDCTRL0_ENABLE_PRESENT |	/* always in DOTCLOCK mode */
-		VDCTRL0_VSYNC_PERIOD_UNIT |
-		VDCTRL0_VSYNC_PULSE_WIDTH_UNIT |
-		VDCTRL0_SET_VSYNC_PULSE_WIDTH(fb_info->var.vsync_len);
-	/* use the saved sync to avoid wrong sync information */
-	if (host->sync & FB_SYNC_HOR_HIGH_ACT)
-		vdctrl0 |= VDCTRL0_HSYNC_ACT_HIGH;
-	if (host->sync & FB_SYNC_VERT_HIGH_ACT)
-		vdctrl0 |= VDCTRL0_VSYNC_ACT_HIGH;
-	if (!(host->sync & FB_SYNC_OE_LOW_ACT))
-		vdctrl0 |= VDCTRL0_ENABLE_ACT_HIGH;
-	if (host->sync & FB_SYNC_CLK_LAT_FALL)
-		vdctrl0 |= VDCTRL0_DOTCLK_ACT_FALLING;
-
-	writel(vdctrl0, host->base + LCDC_VDCTRL0);
-
-	/* frame length in lines */
-	writel(fb_info->var.upper_margin + fb_info->var.vsync_len +
-		fb_info->var.lower_margin + fb_info->var.yres,
-		host->base + LCDC_VDCTRL1);
-
-	/* line length in units of clocks or pixels */
-	writel(set_hsync_pulse_width(host, fb_info->var.hsync_len) |
-		VDCTRL2_SET_HSYNC_PERIOD(fb_info->var.left_margin +
-		fb_info->var.hsync_len + fb_info->var.right_margin +
-		fb_info->var.xres),
-		host->base + LCDC_VDCTRL2);
-
-	writel(SET_HOR_WAIT_CNT(fb_info->var.left_margin +
-		fb_info->var.hsync_len) |
-		SET_VERT_WAIT_CNT(fb_info->var.upper_margin +
-			fb_info->var.vsync_len),
-		host->base + LCDC_VDCTRL3);
-
-	vdctrl4 = SET_DOTCLK_H_VALID_DATA_CNT(fb_info->var.xres);
-	if (mxsfb_is_v4(host))
-		vdctrl4 |= VDCTRL4_SET_DOTCLK_DLY(host->dotclk_delay);
-	writel(vdctrl4, host->base + LCDC_VDCTRL4);
-
-	writel(fb_info->fix.smem_start +
-			fb_info->fix.line_length * fb_info->var.yoffset,
-			host->base + host->devdata->next_buf);
-
-	if (reenable)
+	if (reenable && (!host->is_mpu_lcd))
 		mxsfb_enable_controller(fb_info);
 
 	/* Clear activate as not Reconfiguring framebuffer again */
@@ -829,8 +1037,9 @@ static int mxsfb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 
 static int mxsfb_wait_for_vsync(struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	int ret = 0;
+
 
 	if (host->cur_blank != FB_BLANK_UNBLANK) {
 		dev_err(fb_info->device, "can't wait for VSYNC when fb "
@@ -838,33 +1047,42 @@ static int mxsfb_wait_for_vsync(struct fb_info *fb_info)
 		return -EINVAL;
 	}
 
-	init_completion(&host->vsync_complete);
+	if (host->is_mpu_lcd) {
+		if (mxsfb_mpu_wait_for_ready(host) != 0)
+			return -ETIME;
+	} else {
+		init_completion(&host->vsync_complete);
 
-	host->wait4vsync = 1;
-	writel(CTRL1_VSYNC_EDGE_IRQ_EN,
-		host->base + LCDC_CTRL1 + REG_SET);
-	ret = wait_for_completion_interruptible_timeout(
-				&host->vsync_complete, 1 * HZ);
-	if (ret == 0) {
-		dev_err(fb_info->device,
-			"mxs wait for vsync timeout\n");
-		host->wait4vsync = 0;
-		ret = -ETIME;
-	} else if (ret > 0) {
-		ret = 0;
+		host->wait4vsync = 1;
+		writel(CTRL1_VSYNC_EDGE_IRQ_EN,
+			host->base + LCDC_CTRL1 + REG_SET);
+		ret = wait_for_completion_interruptible_timeout(
+					&host->vsync_complete, 1 * HZ);
+		if (ret == 0) {
+			dev_err(fb_info->device,
+				"mxs wait for vsync timeout\n");
+			host->wait4vsync = 0;
+			ret = -ETIME;
+		} else if (ret > 0) {
+			ret = 0;
+		}
 	}
 	return ret;
 }
+ static int mxsfb_pan_display(struct fb_var_screeninfo *var, struct fb_info *fb_info) ;
 
 static int mxsfb_ioctl(struct fb_info *fb_info, unsigned int cmd,
 			unsigned long arg)
 {
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	int ret = -EINVAL;
 
 	switch (cmd) {
 	case MXCFB_WAIT_FOR_VSYNC:
 		ret = mxsfb_wait_for_vsync(fb_info);
 		break;
+	case MXCFB_MPU_REFRESH_PANEL:
+		ret = mxsfb_mpu_refresh_panel(host);
 	default:
 		break;
 	}
@@ -873,7 +1091,7 @@ static int mxsfb_ioctl(struct fb_info *fb_info, unsigned int cmd,
 
 static int mxsfb_blank(int blank, struct fb_info *fb_info)
 {
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 
 	host->cur_blank = blank;
 
@@ -883,6 +1101,8 @@ static int mxsfb_blank(int blank, struct fb_info *fb_info)
 	case FB_BLANK_HSYNC_SUSPEND:
 	case FB_BLANK_NORMAL:
 		if (host->enabled) {
+			if (host->is_mpu_lcd)
+				host->mpu_lcd_functions->mpu_lcd_poweroff(host);
 			mxsfb_disable_controller(fb_info);
 			pm_runtime_put_sync_suspend(&host->pdev->dev);
 		}
@@ -904,8 +1124,13 @@ static int mxsfb_blank(int blank, struct fb_info *fb_info)
 			pm_runtime_get_sync(&host->pdev->dev);
 
 			writel(0, host->base + LCDC_CTRL);
-			mxsfb_set_par(host->fb_info);
-			mxsfb_enable_controller(fb_info);
+			if (host->is_mpu_lcd) {
+				mxsfb_enable_controller(fb_info);
+				mxsfb_set_par(&host->fb_info);
+			} else {
+				mxsfb_set_par(&host->fb_info);
+				mxsfb_enable_controller(fb_info);
+			}
 		}
 		break;
 	}
@@ -916,8 +1141,9 @@ static int mxsfb_pan_display(struct fb_var_screeninfo *var,
 		struct fb_info *fb_info)
 {
 	int ret = 0;
-	struct mxsfb_info *host = fb_info->par;
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	unsigned offset;
+
 
 	if (host->cur_blank != FB_BLANK_UNBLANK) {
 		dev_dbg(fb_info->device, "can't do pan display when fb "
@@ -935,22 +1161,35 @@ static int mxsfb_pan_display(struct fb_var_screeninfo *var,
 		return -EINVAL;
 	}
 
-	init_completion(&host->flip_complete);
+	if (host->is_mpu_lcd) {
+		if (mxsfb_mpu_wait_for_ready(host) != 0)
+			return -ETIMEDOUT;
 
-	offset = fb_info->fix.line_length * var->yoffset;
+		offset = fb_info->fix.line_length * var->yoffset;
 
-	/* update on next VSYNC */
-	writel(fb_info->fix.smem_start + offset,
-			host->base + host->devdata->next_buf);
+		writel(fb_info->fix.smem_start + offset,
+				host->base + host->devdata->next_buf);
+		writel(fb_info->fix.smem_start + offset,
+				host->base + host->devdata->cur_buf);
+		mxsfb_mpu_refresh_panel(host);
+	} else {
+		init_completion(&host->flip_complete);
 
-	writel(CTRL1_CUR_FRAME_DONE_IRQ_EN,
-		host->base + LCDC_CTRL1 + REG_SET);
+		offset = fb_info->fix.line_length * var->yoffset;
 
-	ret = wait_for_completion_timeout(&host->flip_complete, HZ / 2);
-	if (!ret) {
-		dev_err(fb_info->device,
-			"mxs wait for pan flip timeout\n");
-		return -ETIMEDOUT;
+		/* update on next VSYNC */
+		writel(fb_info->fix.smem_start + offset,
+				host->base + host->devdata->next_buf);
+
+		writel(CTRL1_CUR_FRAME_DONE_IRQ_EN,
+			host->base + LCDC_CTRL1 + REG_SET);
+
+		ret = wait_for_completion_timeout(&host->flip_complete, HZ / 2);
+		if (!ret) {
+			dev_err(fb_info->device,
+				"mxs wait for pan flip timeout\n");
+			return -ETIMEDOUT;
+		}
 	}
 
 	return 0;
@@ -1000,7 +1239,7 @@ static struct fb_ops mxsfb_ops = {
 
 static int mxsfb_restore_mode(struct mxsfb_info *host)
 {
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = &host->fb_info;
 	unsigned line_count;
 	unsigned period;
 	unsigned long pa, fbsize;
@@ -1017,103 +1256,102 @@ static int mxsfb_restore_mode(struct mxsfb_info *host)
 	 * the bus will be hang.
 	 */
 	clk_enable_pix(host);
+	if (!host->is_mpu_lcd) {
+		/* Only restore the mode when the controller is running */
+		ctrl = readl(host->base + LCDC_CTRL);
+		if (!(ctrl & CTRL_RUN))
+			return -EINVAL;
 
-	/* Only restore the mode when the controller is running */
-	ctrl = readl(host->base + LCDC_CTRL);
-	if (!(ctrl & CTRL_RUN))
-		return -EINVAL;
+		vdctrl0 = readl(host->base + LCDC_VDCTRL0);
+		vdctrl2 = readl(host->base + LCDC_VDCTRL2);
+		vdctrl3 = readl(host->base + LCDC_VDCTRL3);
+		vdctrl4 = readl(host->base + LCDC_VDCTRL4);
 
-	memset(&vmode, 0, sizeof(vmode));
+		transfer_count = readl(host->base + host->devdata->transfer_count);
 
-	vdctrl0 = readl(host->base + LCDC_VDCTRL0);
-	vdctrl2 = readl(host->base + LCDC_VDCTRL2);
-	vdctrl3 = readl(host->base + LCDC_VDCTRL3);
-	vdctrl4 = readl(host->base + LCDC_VDCTRL4);
+		vmode.xres = TRANSFER_COUNT_GET_HCOUNT(transfer_count);
+		vmode.yres = TRANSFER_COUNT_GET_VCOUNT(transfer_count);
 
-	transfer_count = readl(host->base + host->devdata->transfer_count);
+		switch (CTRL_GET_WORD_LENGTH(ctrl)) {
+		case 0:
+			bits_per_pixel = 16;
+			break;
+		case 3:
+			bits_per_pixel = 32;
+		case 1:
+		default:
+			return -EINVAL;
+		}
 
-	vmode.xres = TRANSFER_COUNT_GET_HCOUNT(transfer_count);
-	vmode.yres = TRANSFER_COUNT_GET_VCOUNT(transfer_count);
+		fb_info->var.bits_per_pixel = bits_per_pixel;
 
-	switch (CTRL_GET_WORD_LENGTH(ctrl)) {
-	case 0:
-		bits_per_pixel = 16;
-		break;
-	case 3:
-		bits_per_pixel = 32;
-		break;
-	case 1:
-	default:
-		return -EINVAL;
+		vmode.pixclock = KHZ2PICOS(clk_get_rate(host->clk_pix) / 1000U);
+		vmode.hsync_len = get_hsync_pulse_width(host, vdctrl2);
+		vmode.left_margin = GET_HOR_WAIT_CNT(vdctrl3) - vmode.hsync_len;
+		vmode.right_margin = VDCTRL2_GET_HSYNC_PERIOD(vdctrl2) - vmode.hsync_len -
+			vmode.left_margin - vmode.xres;
+		vmode.vsync_len = VDCTRL0_GET_VSYNC_PULSE_WIDTH(vdctrl0);
+		period = readl(host->base + LCDC_VDCTRL1);
+		vmode.upper_margin = GET_VERT_WAIT_CNT(vdctrl3) - vmode.vsync_len;
+		vmode.lower_margin = period - vmode.vsync_len - vmode.upper_margin - vmode.yres;
+
+		vmode.vmode = FB_VMODE_NONINTERLACED;
+
+		vmode.sync = 0;
+		if (vdctrl0 & VDCTRL0_HSYNC_ACT_HIGH)
+			vmode.sync |= FB_SYNC_HOR_HIGH_ACT;
+		if (vdctrl0 & VDCTRL0_VSYNC_ACT_HIGH)
+			vmode.sync |= FB_SYNC_VERT_HIGH_ACT;
+
+		pr_debug("Reconstructed video mode:\n");
+		pr_debug("%dx%d, hsync: %u left: %u, right: %u, vsync: %u, upper: %u, lower: %u\n",
+				vmode.xres, vmode.yres,
+				vmode.hsync_len, vmode.left_margin, vmode.right_margin,
+				vmode.vsync_len, vmode.upper_margin, vmode.lower_margin);
+		pr_debug("pixclk: %ldkHz\n", PICOS2KHZ(vmode.pixclock));
+
+		fb_add_videomode(&vmode, &fb_info->modelist);
+
+		host->ld_intf_width = CTRL_GET_BUS_WIDTH(ctrl);
+		host->dotclk_delay = VDCTRL4_GET_DOTCLK_DLY(vdctrl4);
+
+		fb_info->fix.line_length = vmode.xres * (bits_per_pixel >> 3);
+
+		pa = readl(host->base + host->devdata->cur_buf);
+		fbsize = fb_info->fix.line_length * vmode.yres;
+		if (pa < fb_info->fix.smem_start)
+			return -EINVAL;
+		if (pa + fbsize > fb_info->fix.smem_start + fb_info->fix.smem_len)
+			return -EINVAL;
+		ofs = pa - fb_info->fix.smem_start;
+		if (ofs) {
+			memmove(fb_info->screen_base, fb_info->screen_base + ofs, fbsize);
+			writel(fb_info->fix.smem_start, host->base + host->devdata->next_buf);
+		}
+
+		line_count = fb_info->fix.smem_len / fb_info->fix.line_length;
+		fb_info->fix.ypanstep = 1;
+		fb_info->fix.ywrapstep = 1;
+
+		host->enabled = 1;
 	}
-
-	fb_info->var.bits_per_pixel = bits_per_pixel;
-
-	vmode.pixclock = KHZ2PICOS(clk_get_rate(host->clk_pix) / 1000U);
-	vmode.hsync_len = get_hsync_pulse_width(host, vdctrl2);
-	vmode.left_margin = GET_HOR_WAIT_CNT(vdctrl3) - vmode.hsync_len;
-	vmode.right_margin = VDCTRL2_GET_HSYNC_PERIOD(vdctrl2) - vmode.hsync_len -
-		vmode.left_margin - vmode.xres;
-	vmode.vsync_len = VDCTRL0_GET_VSYNC_PULSE_WIDTH(vdctrl0);
-	period = readl(host->base + LCDC_VDCTRL1);
-	vmode.upper_margin = GET_VERT_WAIT_CNT(vdctrl3) - vmode.vsync_len;
-	vmode.lower_margin = period - vmode.vsync_len - vmode.upper_margin - vmode.yres;
-
-	vmode.vmode = FB_VMODE_NONINTERLACED;
-
-	vmode.sync = 0;
-	if (vdctrl0 & VDCTRL0_HSYNC_ACT_HIGH)
-		vmode.sync |= FB_SYNC_HOR_HIGH_ACT;
-	if (vdctrl0 & VDCTRL0_VSYNC_ACT_HIGH)
-		vmode.sync |= FB_SYNC_VERT_HIGH_ACT;
-
-	pr_debug("Reconstructed video mode:\n");
-	pr_debug("%dx%d, hsync: %u left: %u, right: %u, vsync: %u, upper: %u, lower: %u\n",
-			vmode.xres, vmode.yres,
-			vmode.hsync_len, vmode.left_margin, vmode.right_margin,
-			vmode.vsync_len, vmode.upper_margin, vmode.lower_margin);
-	pr_debug("pixclk: %ldkHz\n", PICOS2KHZ(vmode.pixclock));
-
-	fb_add_videomode(&vmode, &fb_info->modelist);
-
-	host->ld_intf_width = CTRL_GET_BUS_WIDTH(ctrl);
-	host->dotclk_delay = VDCTRL4_GET_DOTCLK_DLY(vdctrl4);
-
-	fb_info->fix.line_length = vmode.xres * (bits_per_pixel >> 3);
-
-	pa = readl(host->base + host->devdata->cur_buf);
-	fbsize = fb_info->fix.line_length * vmode.yres;
-	if (pa < fb_info->fix.smem_start)
-		return -EINVAL;
-	if (pa + fbsize > fb_info->fix.smem_start + fb_info->fix.smem_len)
-		return -EINVAL;
-	ofs = pa - fb_info->fix.smem_start;
-	if (ofs) {
-		memmove(fb_info->screen_base, fb_info->screen_base + ofs, fbsize);
-		writel(fb_info->fix.smem_start, host->base + host->devdata->next_buf);
-	}
-
-	line_count = fb_info->fix.smem_len / fb_info->fix.line_length;
-	fb_info->fix.ypanstep = 1;
-	fb_info->fix.ywrapstep = 1;
-
-	host->enabled = 1;
 
 	return 0;
 }
 
 static int mxsfb_init_fbinfo_dt(struct mxsfb_info *host)
 {
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = &host->fb_info;
 	struct fb_var_screeninfo *var = &fb_info->var;
 	struct device *dev = &host->pdev->dev;
 	struct device_node *np = host->pdev->dev.of_node;
 	struct device_node *display_np;
 	struct device_node *timings_np;
-	struct display_timings *timings = NULL;
+	struct display_timings *timings;
 	const char *disp_dev;
 	u32 width;
 	int i;
+	const char *lcd_panel;
 	int ret = 0;
 
 	host->id = of_alias_get_id(np, "lcdif");
@@ -1124,90 +1362,161 @@ static int mxsfb_init_fbinfo_dt(struct mxsfb_info *host)
 		return -ENOENT;
 	}
 
-	ret = of_property_read_u32(display_np, "bus-width", &width);
-	if (ret < 0) {
-		dev_err(dev, "failed to get property bus-width\n");
-		goto put_display_node;
-	}
-
-	switch (width) {
-	case 8:
-		host->ld_intf_width = STMLCDIF_8BIT;
-		break;
-	case 16:
-		host->ld_intf_width = STMLCDIF_16BIT;
-		break;
-	case 18:
-		host->ld_intf_width = STMLCDIF_18BIT;
-		break;
-	case 24:
-		host->ld_intf_width = STMLCDIF_24BIT;
-		break;
-	default:
-		dev_err(dev, "invalid bus-width value\n");
-		ret = -EINVAL;
-		goto put_display_node;
-	}
-
-	ret = of_property_read_u32(display_np, "bits-per-pixel",
-				   &var->bits_per_pixel);
-	if (ret < 0) {
-		dev_err(dev, "failed to get property bits-per-pixel\n");
-		goto put_display_node;
-	}
-
-	ret = of_property_read_string(np, "disp-dev", &disp_dev);
-	if (!ret) {
-		memcpy(host->disp_dev, disp_dev, strlen(disp_dev));
-		/* Timing is from encoder driver */
-		goto put_display_node;
-	}
-
-	timings = of_get_display_timings(display_np);
-	if (!timings) {
-		dev_err(dev, "failed to get display timings\n");
-		ret = -ENOENT;
-		goto put_display_node;
-	}
-
-	timings_np = of_find_node_by_name(display_np,
-					  "display-timings");
-	if (!timings_np) {
-		dev_err(dev, "failed to find display-timings node\n");
-		ret = -ENOENT;
-		goto put_display_node;
-	}
-
-	for (i = 0; i < of_get_child_count(timings_np); i++) {
-		struct videomode vm;
+	host->is_mpu_lcd = of_property_read_bool(display_np, "mpu-mode");
+	if (host->is_mpu_lcd) {
+		struct fb_videomode *mpu_lcd_modedb;
 		struct fb_videomode fb_vm;
+		int size;
 
-		ret = videomode_from_timings(timings, &vm, i);
-		if (ret < 0)
-			goto put_timings_node;
-		ret = fb_videomode_from_videomode(&vm, &fb_vm);
-		if (ret < 0)
-			goto put_timings_node;
+		ret = of_property_read_string(display_np, "lcd_panel", &lcd_panel);
+		if (ret) {
+			dev_err(dev, "failed to read of property lcd_panel\n");
+			goto put_display_node;
+		}
+		dev_info(dev, "read dts, lcd_panel is %s\n", lcd_panel);
 
-		if (!(vm.flags & DISPLAY_FLAGS_DE_HIGH))
-			fb_vm.sync |= FB_SYNC_OE_LOW_ACT;
-		if (vm.flags & DISPLAY_FLAGS_PIXDATA_NEGEDGE)
-			fb_vm.sync |= FB_SYNC_CLK_LAT_FALL;
+		for (i = 0; i < ARRAY_SIZE(mpu_lcd_db); i++) {
+			if (!strcmp(lcd_panel, mpu_lcd_db[i].lcd_panel)) {
+				host->mpu_lcd_functions =
+					&mpu_lcd_db[i].lcd_callback;
+				break;
+			}
+		}
+		if (i == ARRAY_SIZE(mpu_lcd_db)) {
+			dev_err(dev, "failed to find supported lcd panel.\n");
+			ret = -EINVAL;
+			goto put_display_node;
+		}
+		host->mpu_lcd_functions->get_mpu_lcd_videomode(&mpu_lcd_modedb, &size,
+						&host->mpu_lcd_sigs);
+
+		memcpy(&fb_vm, mpu_lcd_modedb, sizeof(struct fb_videomode));
+		var->bits_per_pixel = host->mpu_lcd_sigs->panel_bpp;
+
+		switch (host->mpu_lcd_sigs->interface_width) {
+		case 8:
+			host->ld_intf_width = STMLCDIF_8BIT;
+			break;
+		case 16:
+
+			host->ld_intf_width = STMLCDIF_16BIT;
+			break;
+		case 18:
+			host->ld_intf_width = STMLCDIF_18BIT;
+			break;
+		case 24:
+			host->ld_intf_width = STMLCDIF_24BIT;
+			break;
+		default:
+			dev_err(dev, "invalid interface width value\n");
+			ret = -EINVAL;
+			goto put_display_node;
+		}
+
+		/* lcd reset gpio pin */
+		host->mpu_lcd_sigs->lcd_reset_is_gpio = 0;
+		host->mpu_lcd_sigs->lcd_reset_gpio = of_get_named_gpio(display_np, "lcd_reset_gpio", 0);
+		if (gpio_is_valid(host->mpu_lcd_sigs->lcd_reset_gpio)) {
+			dev_info(dev, "find lcd reset gpio pin.\n");
+			 if (devm_gpio_request_one(dev, host->mpu_lcd_sigs->lcd_reset_gpio, GPIOF_OUT_INIT_HIGH, "lcd_reset") >= 0)
+				 host->mpu_lcd_sigs->lcd_reset_is_gpio = 1;
+		}
+
+		/* lcd rs gpio pin */
+		host->mpu_lcd_sigs->lcd_rs_is_gpio = 0;
+		host->mpu_lcd_sigs->lcd_rs_gpio = of_get_named_gpio(display_np, "lcd_rs_gpio", 0);
+		if (gpio_is_valid(host->mpu_lcd_sigs->lcd_rs_gpio)) {
+			dev_info(dev, "find lcd rs gpio pin.\n");
+			if (devm_gpio_request_one(dev, host->mpu_lcd_sigs->lcd_rs_is_gpio, GPIOF_OUT_INIT_HIGH, "lcd_rs") >= 0)
+				host->mpu_lcd_sigs->lcd_rs_is_gpio = 1;
+		}
+
 		fb_add_videomode(&fb_vm, &fb_info->modelist);
+		goto put_display_node;
+	} else {
+		ret = of_property_read_u32(display_np, "bus-width", &width);
+		if (ret < 0) {
+			dev_err(dev, "failed to get property bus-width\n");
+			goto put_display_node;
+		}
+
+		switch (width) {
+		case 8:
+			host->ld_intf_width = STMLCDIF_8BIT;
+			break;
+		case 16:
+			host->ld_intf_width = STMLCDIF_16BIT;
+			break;
+		case 18:
+			host->ld_intf_width = STMLCDIF_18BIT;
+			break;
+		case 24:
+			host->ld_intf_width = STMLCDIF_24BIT;
+			break;
+		default:
+			dev_err(dev, "invalid bus-width value\n");
+			ret = -EINVAL;
+			goto put_display_node;
+		}
+
+		ret = of_property_read_u32(display_np, "bits-per-pixel",
+					   &var->bits_per_pixel);
+		if (ret < 0) {
+			dev_err(dev, "failed to get property bits-per-pixel\n");
+			goto put_display_node;
+		}
+
+		ret = of_property_read_string(np, "disp-dev", &disp_dev);
+		if (!ret) {
+			memcpy(host->disp_dev, disp_dev, strlen(disp_dev));
+			/* Timing is from encoder driver */
+			goto put_display_node;
+		}
+
+		timings = of_get_display_timings(display_np);
+		if (!timings) {
+			dev_err(dev, "failed to get display timings\n");
+			ret = -ENOENT;
+			goto put_display_node;
+		}
+
+		timings_np = of_find_node_by_name(display_np,
+						  "display-timings");
+		if (!timings_np) {
+			dev_err(dev, "failed to find display-timings node\n");
+			ret = -ENOENT;
+			goto put_display_node;
+		}
+
+		for (i = 0; i < of_get_child_count(timings_np); i++) {
+			struct videomode vm;
+			struct fb_videomode fb_vm;
+
+			ret = videomode_from_timings(timings, &vm, i);
+			if (ret < 0)
+				goto put_timings_node;
+			ret = fb_videomode_from_videomode(&vm, &fb_vm);
+			if (ret < 0)
+				goto put_timings_node;
+
+			if (!(vm.flags & DISPLAY_FLAGS_DE_HIGH))
+				fb_vm.sync |= FB_SYNC_OE_LOW_ACT;
+			if (vm.flags & DISPLAY_FLAGS_PIXDATA_NEGEDGE)
+				fb_vm.sync |= FB_SYNC_CLK_LAT_FALL;
+			fb_add_videomode(&fb_vm, &fb_info->modelist);
+		}
 	}
 
 put_timings_node:
 	of_node_put(timings_np);
 put_display_node:
-	if (timings)
-		kfree(timings);
 	of_node_put(display_np);
 	return ret;
 }
 
 static int mxsfb_init_fbinfo(struct mxsfb_info *host)
 {
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = &host->fb_info;
 	struct fb_var_screeninfo *var = &fb_info->var;
 	struct fb_modelist *modelist;
 	int ret;
@@ -1221,8 +1530,9 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host)
 	fb_info->fix.accel = FB_ACCEL_NONE;
 
 	ret = mxsfb_init_fbinfo_dt(host);
-	if (ret)
+	if (ret) {
 		return ret;
+	}
 
 	if (host->id < 0)
 		sprintf(fb_info->fix.id, "mxs-lcdif");
@@ -1263,13 +1573,16 @@ static int mxsfb_init_fbinfo(struct mxsfb_info *host)
 static void mxsfb_dispdrv_init(struct platform_device *pdev,
 			      struct fb_info *fbi)
 {
-	struct mxsfb_info *host = fbi->par;
+	struct mxsfb_info *host = to_imxfb_host(fbi);
 	struct mxc_dispdrv_setting setting;
 	struct device *dev = &pdev->dev;
 	char disp_dev[32];
 
 	memset(&setting, 0x0, sizeof(setting));
 	setting.fbi = fbi;
+
+	setting.default_bpp = 16;
+
 	memcpy(disp_dev, host->disp_dev, strlen(host->disp_dev));
 	disp_dev[strlen(host->disp_dev)] = '\0';
 
@@ -1286,7 +1599,7 @@ static void mxsfb_dispdrv_init(struct platform_device *pdev,
 
 static void mxsfb_free_videomem(struct mxsfb_info *host)
 {
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = &host->fb_info;
 
 	mxsfb_unmap_videomem(fb_info);
 }
@@ -1325,6 +1638,7 @@ static int mxsfb_map_videomem(struct fb_info *fbi)
 
 	/* Clear the screen */
 	memset((char *)fbi->screen_base, 0, fbi->fix.smem_len);
+	memset((char *)fbi->screen_base, 0xF0, fbi->fix.smem_len);
 
 	return 0;
 }
@@ -1375,22 +1689,10 @@ static int mxsfb_probe(struct platform_device *pdev)
 	struct fb_info *fb_info;
 	struct pinctrl *pinctrl;
 	int irq = platform_get_irq(pdev, 0);
-	int gpio, ret;
+	int ret;
 
 	if (of_id)
 		pdev->id_entry = of_id->data;
-
-	gpio = of_get_named_gpio(pdev->dev.of_node, "enable-gpio", 0);
-	if (gpio == -EPROBE_DEFER)
-		return -EPROBE_DEFER;
-
-	if (gpio_is_valid(gpio)) {
-		ret = devm_gpio_request_one(&pdev->dev, gpio, GPIOF_OUT_INIT_LOW, "lcd_pwr_en");
-		if (ret) {
-			dev_err(&pdev->dev, "faild to request gpio %d, ret = %d\n", gpio, ret);
-			return ret;
-		}
-	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -1398,28 +1700,20 @@ static int mxsfb_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	host = devm_kzalloc(&pdev->dev, sizeof(struct mxsfb_info), GFP_KERNEL);
-	if (!host) {
-		dev_err(&pdev->dev, "Failed to allocate IO resource\n");
+	fb_info = framebuffer_alloc(sizeof(struct mxsfb_info), &pdev->dev);
+	if (!fb_info) {
+		dev_err(&pdev->dev, "Failed to allocate fbdev\n");
 		return -ENOMEM;
 	}
 
-	fb_info = framebuffer_alloc(sizeof(struct fb_info), &pdev->dev);
-	if (!fb_info) {
-		dev_err(&pdev->dev, "Failed to allocate fbdev\n");
-		devm_kfree(&pdev->dev, host);
-		return -ENOMEM;
-	}
-	host->fb_info = fb_info;
-	fb_info->par = host;
+	host = to_imxfb_host(fb_info);
 
 	ret = devm_request_irq(&pdev->dev, irq, mxsfb_irq_handler, 0,
 			  dev_name(&pdev->dev), host);
 	if (ret) {
 		dev_err(&pdev->dev, "request_irq (%d) failed with error %d\n",
 				irq, ret);
-		ret = -ENODEV;
-		goto fb_release;
+		return -ENODEV;
 	}
 
 	host->base = devm_ioremap_resource(&pdev->dev, res);
@@ -1459,6 +1753,8 @@ static int mxsfb_probe(struct platform_device *pdev)
 	if (IS_ERR(host->reg_lcd))
 		host->reg_lcd = NULL;
 
+	strncpy(host->disp_dev, "lcd", 3);
+
 	fb_info->pseudo_palette = devm_kzalloc(&pdev->dev, sizeof(u32) * 16,
 					       GFP_KERNEL);
 	if (!fb_info->pseudo_palette) {
@@ -1484,10 +1780,17 @@ static int mxsfb_probe(struct platform_device *pdev)
 		}
 	}
 
+	platform_set_drvdata(pdev, fb_info);
+
 	if (!host->enabled) {
 		writel(0, host->base + LCDC_CTRL);
-		mxsfb_set_par(fb_info);
-		mxsfb_enable_controller(fb_info);
+		if (host->is_mpu_lcd) {
+			mxsfb_enable_controller(fb_info);
+			mxsfb_set_par(&host->fb_info);
+		} else {
+			mxsfb_set_par(&host->fb_info);
+			mxsfb_enable_controller(fb_info);
+		}
 		pm_runtime_get_sync(&host->pdev->dev);
 	}
 
@@ -1517,18 +1820,16 @@ fb_destroy:
 	fb_destroy_modelist(&fb_info->modelist);
 fb_pm_runtime_disable:
 	pm_runtime_disable(&host->pdev->dev);
-	devm_kfree(&pdev->dev, fb_info->pseudo_palette);
 fb_release:
 	framebuffer_release(fb_info);
-	devm_kfree(&pdev->dev, host);
 
 	return ret;
 }
 
 static int mxsfb_remove(struct platform_device *pdev)
 {
-	struct mxsfb_info *host = platform_get_drvdata(pdev);
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = platform_get_drvdata(pdev);
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 
 	if (host->enabled)
 		mxsfb_disable_controller(fb_info);
@@ -1537,18 +1838,17 @@ static int mxsfb_remove(struct platform_device *pdev)
 	unregister_framebuffer(fb_info);
 	mxsfb_free_videomem(host);
 
-	platform_set_drvdata(pdev, NULL);
-
-	devm_kfree(&pdev->dev, fb_info->pseudo_palette);
 	framebuffer_release(fb_info);
-	devm_kfree(&pdev->dev, host);
+
+	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }
 
 static void mxsfb_shutdown(struct platform_device *pdev)
 {
-	struct mxsfb_info *host = platform_get_drvdata(pdev);
+	struct fb_info *fb_info = platform_get_drvdata(pdev);
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 
 	/*
 	 * Force stop the LCD controller as keeping it running during reboot
@@ -1557,10 +1857,12 @@ static void mxsfb_shutdown(struct platform_device *pdev)
 	if (host->cur_blank == FB_BLANK_UNBLANK) {
 		writel(CTRL_RUN, host->base + LCDC_CTRL + REG_CLR);
 		writel(CTRL_MASTER, host->base + LCDC_CTRL + REG_CLR);
+		if (host->is_mpu_lcd)
+			host->mpu_lcd_functions->mpu_lcd_poweroff(host);
 	}
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_RUNTIME
 static int mxsfb_runtime_suspend(struct device *dev)
 {
 	release_bus_freq(BUS_FREQ_HIGH);
@@ -1576,11 +1878,16 @@ static int mxsfb_runtime_resume(struct device *dev)
 
 	return 0;
 }
+#else
+#define	mxsfb_runtime_suspend	NULL
+#define	mxsfb_runtime_resume	NULL
+#endif
 
+#ifdef CONFIG_PM
 static int mxsfb_suspend(struct device *pdev)
 {
-	struct mxsfb_info *host = dev_get_drvdata(pdev);
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = dev_get_drvdata(pdev);
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 	int saved_blank;
 
 	console_lock();
@@ -1597,10 +1904,10 @@ static int mxsfb_suspend(struct device *pdev)
 
 static int mxsfb_resume(struct device *pdev)
 {
-	struct mxsfb_info *host = dev_get_drvdata(pdev);
-	struct fb_info *fb_info = host->fb_info;
+	struct fb_info *fb_info = dev_get_drvdata(pdev);
+	struct mxsfb_info *host = to_imxfb_host(fb_info);
 
-	pinctrl_pm_select_default_state(pdev);
+	mxsfb_resume(pdev);
 
 	console_lock();
 	mxsfb_blank(host->restore_blank, fb_info);
@@ -1610,9 +1917,6 @@ static int mxsfb_resume(struct device *pdev)
 	return 0;
 }
 #else
-#define	mxsfb_runtime_suspend	NULL
-#define	mxsfb_runtime_resume	NULL
-
 #define	mxsfb_suspend	NULL
 #define	mxsfb_resume	NULL
 #endif

@@ -37,6 +37,15 @@ struct mxc_lcdif_data {
 
 static struct fb_videomode lcdif_modedb[] = {
 	{
+		"ILI9225G-QCIF", 60, 176, 220, 200000,
+		0, 0,
+		0, 0,
+		0, 0,
+		0,
+		FB_VMODE_NONINTERLACED,
+		0,
+	},
+	{
 	/* 800x480 @ 57 Hz , pixel clk @ 27MHz */
 	"CLAA-WVGA", 57, 800, 480, 37037, 40, 60, 10, 10, 20, 10,
 	FB_SYNC_CLK_LAT_FALL,
