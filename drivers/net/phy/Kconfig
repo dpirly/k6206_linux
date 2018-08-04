@@ -14,6 +14,12 @@ if PHYLIB
 
 comment "MII PHY device drivers"
 
+config GPIO_MDIO_WEIZHUN
+	tristate "GPIO imitate MDIO controller"
+	default y
+	help
+		This module is used gpio imitate MDIO to control phy for weizhun
+
 config AT803X_PHY
 	tristate "Drivers for Atheros AT803X PHYs"
 	---help---
