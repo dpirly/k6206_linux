@@ -210,19 +210,19 @@ struct adxl34x {
 };
 
 static const struct adxl34x_platform_data adxl34x_default_init = {
-	.tap_threshold = 35,
-	.tap_duration = 3,
-	.tap_latency = 20,
-	.tap_window = 20,
+	.tap_threshold = 0x32,
+	.tap_duration = 0x12,
+	.tap_latency = 0x12,
+	.tap_window = 0x45,
 	.tap_axis_control = ADXL_TAP_X_EN | ADXL_TAP_Y_EN | ADXL_TAP_Z_EN,
-	.act_axis_control = 0xFF,
-	.activity_threshold = 6,
-	.inactivity_threshold = 4,
-	.inactivity_time = 3,
-	.free_fall_threshold = 8,
-	.free_fall_time = 0x20,
-	.data_rate = 8,
-	.data_range = ADXL_FULL_RES,
+	.activity_threshold = 0x03, //THRESH_ACT
+	.inactivity_threshold = 0x02, //THRESH_INACT
+	.inactivity_time = 0x03, //TIME_INACT
+	.act_axis_control = 0xFF, //ACT_INACT_CTL
+	.free_fall_threshold = 0x08, //THRESH_FF
+	.free_fall_time = 0x20, //TIME_FF
+	.data_rate = 0x0A, //BW_RATE
+	.data_range = 0x0B,//DATA_FORMAT
 
 	.ev_type = EV_ABS,
 	.ev_code_x = ABS_X,	/* EV_REL */
@@ -697,11 +697,11 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	const struct adxl34x_platform_data *pdata;
 	int err, range, i;
 	unsigned char revid;
+	int num;
 
 	if (!irq) {
 		dev_err(dev, "no IRQ?\n");
 		err = -ENODEV;
-		goto err_out;
 	}
 
 	ac = kzalloc(sizeof(*ac), GFP_KERNEL);
@@ -728,8 +728,8 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	ac->irq = irq;
 	ac->bops = bops;
 
+	AC_WRITE(ac, INT_ENABLE, 0x00);
 	mutex_init(&ac->mutex);
-
 	input_dev->name = "ADXL34x accelerometer";
 	revid = AC_READ(ac, DEVID);
 
@@ -808,7 +808,7 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	if (FIFO_MODE(pdata->fifo_mode) == FIFO_BYPASS)
 		ac->fifo_delay = false;
 
-	AC_WRITE(ac, POWER_CTL, 0);
+	AC_WRITE(ac, POWER_CTL, 0x00);
 
 	err = request_threaded_irq(ac->irq, NULL, adxl34x_irq,
 				   IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
@@ -825,7 +825,6 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	err = input_register_device(input_dev);
 	if (err)
 		goto err_remove_attr;
-
 	AC_WRITE(ac, OFSX, pdata->x_axis_offset);
 	ac->hwcal.x = pdata->x_axis_offset;
 	AC_WRITE(ac, OFSY, pdata->y_axis_offset);
@@ -846,17 +845,23 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	AC_WRITE(ac, BW_RATE, RATE(ac->pdata.data_rate) |
 		 (pdata->low_power_mode ? LOW_POWER : 0));
 	AC_WRITE(ac, DATA_FORMAT, pdata->data_range);
+	AC_WRITE(ac, FIFO_CTL, 0x00);
+	/*
 	AC_WRITE(ac, FIFO_CTL, FIFO_MODE(pdata->fifo_mode) |
 			SAMPLES(pdata->watermark));
+	*/
+	AC_WRITE(ac, INT_MAP, 0x00);
 
+	AC_WRITE(ac, POWER_CTL, 0x08);
+	/*
 	if (pdata->use_int2) {
-		/* Map all INTs to INT2 */
+		//Map all INTs to INT2
 		AC_WRITE(ac, INT_MAP, ac->int_mask | OVERRUN);
 	} else {
-		/* Map all INTs to INT1 */
+		//Map all INTs to INT1
 		AC_WRITE(ac, INT_MAP, 0);
 	}
-
+	*/
 	if (ac->model == 346 && ac->pdata.orientation_enable) {
 		AC_WRITE(ac, ORIENT_CONF,
 			ORIENT_DEADZONE(ac->pdata.deadzone_angle) |
@@ -877,8 +882,8 @@ struct adxl34x *adxl34x_probe(struct device *dev, int irq,
 	} else {
 		ac->pdata.orientation_enable = 0;
 	}
-
-	AC_WRITE(ac, INT_ENABLE, ac->int_mask | OVERRUN);
+	AC_WRITE(ac, INT_ENABLE, 0x18);
+	//AC_WRITE(ac, INT_ENABLE, ac->int_mask | OVERRUN);
 
 	ac->pdata.power_mode &= (PCTL_AUTO_SLEEP | PCTL_LINK);
 

@@ -263,6 +263,14 @@
 	pinctrl-0 = <&pinctrl_i2c2>;
 	status = "okay";
 
+	adxl34x: adxl34x@53 {
+		compatible = "adxl34x";
+		reg = <0x53>;
+		interrupt-parent = <&gpio5>;
+		interrupts = <0 4>;
+		status = "okay";
+	};
+
 	codec: wm8960@1a {
 		compatible = "wlf,wm8960";
 		reg = <0x1a>;
